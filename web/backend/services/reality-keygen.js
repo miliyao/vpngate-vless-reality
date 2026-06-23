@@ -8,8 +8,8 @@ function generateRealityKeys() {
   const { privateKey, publicKey } = crypto.generateKeyPairSync('x25519');
 
   // 导出为 DER 格式
-  const privDer = privateKey.export({ format: 'buffer', type: 'pkcs8' });
-  const pubDer = publicKey.export({ format: 'buffer', type: 'spki' });
+  const privDer = privateKey.export({ format: 'der', type: 'pkcs8' });
+  const pubDer = publicKey.export({ format: 'der', type: 'spki' });
 
   // 提取原始 32 字节的私钥与公钥
   // X25519 PKCS8 的 DER 编码中，头部固定为 16 字节，私钥位于后 32 字节
