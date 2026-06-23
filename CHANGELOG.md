@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.9.0-rc.3 - 2026-06-23
+
+- Added system status and backup/restore guidance to the web panel.
+
 ## v0.9.0-rc.2 - 2026-06-23
 
 - Added `/healthz` and authenticated `/api/system/status` operational endpoints.

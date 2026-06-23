@@ -5,9 +5,11 @@ const API_BASE = '';
 const egressList = ref([]);
 const vpnRegions = ref([]);
 const jobs = ref([]);
+const systemStatus = ref(null);
 const loadingRegions = ref(false);
 const loadingList = ref(false);
 const loadingJobs = ref(false);
+const loadingSystemStatus = ref(false);
 const creatingEgress = ref(false);
 const creatingAll = ref(false);
 const formName = ref('');
@@ -103,6 +105,19 @@ async function fetchJobs() {
     jobs.value = await res.json();
   } catch (err) { showToast(err.message, 'error'); }
   finally { loadingJobs.value = false; }
+}
+
+async function fetchSystemStatus() {
+  loadingSystemStatus.value = true;
+  try {
+    const res = await fetch(`${API_BASE}/api/system/status`);
+    if (!res.ok) throw new Error('拉取系统状态失败');
+    systemStatus.value = await res.json();
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    loadingSystemStatus.value = false;
+  }
 }
 
 function regionName(code, fallback = '') {
@@ -330,12 +345,21 @@ const stats = computed(() => ({
   error: egressList.value.filter(e => e.status === 'error').length
 }));
 
+const systemCards = computed(() => ([
+  { label: '版本', value: systemStatus.value?.version || '-' },
+  { label: '认证', value: systemStatus.value?.authEnabled ? '已启用' : '已关闭' },
+  { label: '出口', value: systemStatus.value?.egressCount ?? '-' },
+  { label: '任务', value: systemStatus.value ? Object.values(systemStatus.value.jobStatusCounts || {}).reduce((a, b) => a + b, 0) : '-' }
+]));
+
 onMounted(() => {
   fetchEgressList();
   fetchRegions();
   fetchJobs();
+  fetchSystemStatus();
   setInterval(fetchEgressList, 15000);
   setInterval(fetchJobs, 3000);
+  setInterval(fetchSystemStatus, 10000);
 });
 </script>
 
@@ -439,6 +463,27 @@ onMounted(() => {
 
     <div class="main-grid">
       <aside class="panel glass-panel">
+        <div class="section-head">
+          <div>
+            <h2>系统状态</h2>
+            <p class="text-secondary">面板、任务队列和健康检查</p>
+          </div>
+          <button class="btn btn-sm" @click="fetchSystemStatus" :disabled="loadingSystemStatus">{{ loadingSystemStatus ? '...' : '刷新' }}</button>
+        </div>
+        <div class="status-grid">
+          <div v-for="card in systemCards" :key="card.label" class="status-card">
+            <span class="status-label">{{ card.label }}</span>
+            <span class="status-value">{{ card.value }}</span>
+          </div>
+        </div>
+        <div class="status-note" v-if="systemStatus">
+          <span>健康检查</span>
+          <strong>{{ systemStatus.ok ? '正常' : '异常' }}</strong>
+          <span>最近任务</span>
+          <strong>{{ systemStatus.latestJob ? `#${systemStatus.latestJob.id}` : '-' }}</strong>
+        </div>
+
+        <div class="divider"></div>
         <h2>创建出口</h2>
         <p class="text-secondary mb-16">自动获取 VPNGate 最优节点</p>
         <form @submit.prevent="createEgress" class="form">
@@ -472,6 +517,14 @@ onMounted(() => {
 
         <div class="hint-box">
           <p><strong>自愈</strong>：出口连续 2 次失败后自动漂移至同地区新节点，客户端配置不变。</p>
+        </div>
+
+        <div class="divider"></div>
+        <h2>备份恢复</h2>
+        <p class="text-secondary mb-16">包含 `.env`、SQLite 数据和出口配置</p>
+        <div class="ops-box">
+          <code>./scripts/backup.sh</code>
+          <code>./scripts/restore.sh ./backups/vless-reality-backup-YYYYmmdd-HHMMSS.tar.gz</code>
         </div>
       </aside>
 
@@ -574,6 +627,14 @@ onMounted(() => {
 @media(min-width:992px){.main-grid{grid-template-columns:320px 1fr}}
 
 .panel h2{font-size:16px;font-weight:700;margin-bottom:4px}
+.section-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
+.section-head h2{margin-bottom:2px}
+.status-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.status-card{background:rgba(0,0,0,.15);border:1px solid var(--border-color);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.status-label{font-size:11px;color:var(--text-secondary)}
+.status-value{font-size:15px;font-weight:800;word-break:break-word}
+.status-note{margin-top:10px;display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:12px;color:var(--text-secondary)}
+.status-note strong{color:var(--text-primary);font-weight:700}
 .form{display:flex;flex-direction:column;gap:10px}
 .label{font-size:12px;font-weight:600;color:var(--text-secondary)}
 .input{background:rgba(0,0,0,.2);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);font-family:inherit;font-size:14px;padding:10px 14px;width:100%;outline:none;transition:border-color .2s,box-shadow .2s}
@@ -584,6 +645,8 @@ onMounted(() => {
 .divider{height:1px;background:var(--border-color);margin:20px 0}
 .batch-btns{display:flex;flex-direction:column;gap:8px}
 .hint-box{margin-top:16px;background:rgba(88,101,242,.05);border:1px dashed rgba(88,101,242,.2);border-radius:8px;padding:12px;font-size:12px;color:var(--text-secondary);line-height:1.6}
+.ops-box{display:flex;flex-direction:column;gap:8px}
+.ops-box code{display:block;background:rgba(0,0,0,.22);border:1px solid var(--border-color);border-radius:8px;padding:10px;font-size:11px;line-height:1.5;color:#a5b4fc;word-break:break-all}
 
 .list-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .list-head h2{font-size:17px;font-weight:700}
