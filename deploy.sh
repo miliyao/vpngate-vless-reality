@@ -103,7 +103,7 @@ VPS_IP=$(curl -s --max-time 5 https://ipinfo.io/ip || curl -s --max-time 5 https
 echo -e "${BLUE}====================================================${PLAIN}"
 echo -e "${GREEN}[+] 部署全部就绪！${PLAIN}"
 echo -e "${BLUE}====================================================${PLAIN}"
-echo -e "控制面板访问地址: ${GREEN}http://${VPS_IP}:3000${PLAIN}"
+echo -e "控制面板访问地址: ${GREEN}http://${VPS_IP}:${PANEL_PORT:-3000}${PLAIN}"
 echo -e "默认 Reality 混淆域名: ${YELLOW}www.asus.com${PLAIN}"
 echo -e ""
 echo -e "操作指引："

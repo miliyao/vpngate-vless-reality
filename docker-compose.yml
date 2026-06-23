@@ -14,7 +14,7 @@ services:
       # 使用 PWD 的语法让其自动加载为执行 docker compose 时的工作目录
       - HOST_DATA_PATH=${PWD}/data
     ports:
-      - "3000:3000"
+      - "${PANEL_PORT:-3000}:3000"
       # 出口容器的端口范围预留（需在防火墙中放行）
       - "44301-44400:44301-44400"
     volumes:
