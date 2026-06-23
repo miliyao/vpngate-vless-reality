@@ -33,8 +33,13 @@ async function processJobs() {
   }
 }
 
-setInterval(processJobs, Number(process.env.JOB_POLL_INTERVAL || 2000));
-processJobs().catch(err => console.error('job processing error:', err.message));
+// 使用递归 setTimeout 代替 setInterval，确保上一轮任务处理完毕后
+// 再安排下一次轮询，彻底消除因任务耗时超过轮询间隔导致的双重执行竞态。
+async function runLoop() {
+  await processJobs().catch(err => console.error('[-] Job 处理出错:', err.message));
+  setTimeout(runLoop, Number(process.env.JOB_POLL_INTERVAL || 2000));
+}
+runLoop();
 
 process.on('SIGINT', () => process.exit(0));
 process.on('SIGTERM', () => process.exit(0));

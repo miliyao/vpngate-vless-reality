@@ -61,9 +61,20 @@ router.post('/create-all', async (req, res) => {
 router.get('/list', async (req, res) => {
   try {
     const list = db.getEgresses();
+
+    // 并发查询所有出口的 Docker 状态，耗时由最慢的单个查询决定（O(1)），
+    // 不再随出口数量线性增长。使用 allSettled 确保单个查询失败不影响整体。
+    const settled = await Promise.allSettled(
+      list.map(e => dockerService.getContainerStatusAndIp(e.name))
+    );
+
     const result = [];
-    for (let egress of list) {
-      const dockerStatus = await dockerService.getContainerStatusAndIp(egress.name);
+    for (let i = 0; i < list.length; i++) {
+      const egress = list[i];
+      const dockerStatus = settled[i].status === 'fulfilled'
+        ? settled[i].value
+        : { status: 'error', ip: 'error', error: settled[i].reason?.message || '查询失败' };
+
       const shouldKeep = ['starting', 'rebuilding'].includes(egress.status) && dockerStatus.status === 'offline';
       const resolvedStatus = dockerStatus.ip === 'error' ? 'error' : dockerStatus.status;
       const updates = {
