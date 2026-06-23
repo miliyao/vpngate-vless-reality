@@ -30,7 +30,7 @@ RUN npm install --omit=dev
 COPY web/backend/ ./
 
 # 将阶段 1 编译的前端静态产物拷贝至后端静态目录下，脱离 Git 编译维护
-COPY --from=frontend-builder /app/frontend/dist ./dist
+COPY --from=frontend-builder /app/backend/dist ./dist
 
 # 暴露面板管理端口
 EXPOSE 3000
