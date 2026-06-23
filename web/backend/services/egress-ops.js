@@ -97,7 +97,13 @@ async function rebuildEgress(name) {
   const egress = db.getEgress(name);
   if (!egress) throw new Error('出口未找到');
   db.updateEgress(name, { status: 'rebuilding', error: '', updatedAt: Date.now() });
-  const node = await vpngateFetcher.getBestNode(egress.region);
+  
+  // 简体中文注释：提取刚才失效连接的 IP 强行予以剔除，确保换成新节点重试
+  const lastFailedIp = egress.nodeIp;
+  const excludeSet = new Set();
+  if (lastFailedIp) excludeSet.add(lastFailedIp);
+
+  const node = await vpngateFetcher.getBestNode(egress.region, excludeSet);
   const dir = ensureDir(name);
   fs.writeFileSync(path.join(dir, 'client.ovpn'), node.ovpnConfig, 'utf-8');
   db.updateEgress(name, { nodeIp: node.ip, nodeHostname: node.hostname, latency: node.ping, updatedAt: Date.now() });

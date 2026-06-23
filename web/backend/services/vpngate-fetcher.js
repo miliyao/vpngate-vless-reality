@@ -110,15 +110,17 @@ async function fetchNodes() {
 }
 
 /**
- * 根据指定国家/地区，获取综合得分最高（或延迟最低）的最佳节点
+ * 根据指定国家/地区，获取综合得分最高（或延迟最低）的最佳节点，支持剔除失效节点
  * @param {string} region - 国家简写，如 "JP", "US", "KR"
+ * @param {Set|Array} excludeIps - 需要排除的 IP 列表
  */
-async function getBestNode(region) {
+async function getBestNode(region, excludeIps) {
   const nodes = await fetchNodes();
   
-  // 筛选对应国家的节点
+  // 筛选对应国家的节点，并自动排除不可用的失效 IP
   const filtered = nodes.filter(
-    n => n.countryShort.toLowerCase() === region.toLowerCase()
+    n => n.countryShort.toLowerCase() === region.toLowerCase() &&
+         (!excludeIps || (excludeIps instanceof Set ? !excludeIps.has(n.ip) : !excludeIps.includes(n.ip)))
   );
 
   if (filtered.length === 0) {
