@@ -2,8 +2,6 @@
 // 中文注释，保障逻辑清晰及错误处理
 
 const Docker = require('dockerode');
-const path = require('path');
-const fs = require('fs');
 
 // 初始化 Docker 客户端，读取挂载的 docker.sock
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });

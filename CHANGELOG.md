@@ -1,5 +1,20 @@
 # 更新日志
 
+## v1.2.0 - 2026-06-24
+
+### 重构优化
+- **数据库增量安全更新**：重构 `db.js` 中的 `updateEgress`，根据字段动态编译并缓存 SQL，杜绝 Read-Modify-Write 并发竞态条件，清理冗余 SQL。
+- **出口自愈探测去限流化**：在 `entrypoint.sh` 中使用各大科技公司无流量 Generate 204 HEAD 探测，替代容易引起 429 限流的 ipinfo.io 与 api.ipify.org 轮询检测，并优化获取 IP 的多源回退容错机制。
+- **批量操作受控并发化**：在 `egress-ops.js` 中引入轻量级 `limitConcurrency` 异步控制，将创建、重建和删除操作由串行升级为并发度为 3 的受控并发。
+- **严格的安全路径防穿越**：对出口相关目录强制使用 `path.resolve` 进行绝对路径计算，严格判定目录前缀以防止利用恶意穿越字符对系统敏感文件进行破坏。
+- **前端模块化组件拆分**：将 720 行单文件 `App.vue` 大幅拆分为 `SystemStatus.vue`、`CreateEgressForm.vue`、`EgressCard.vue` 和 `JobList.vue` 四个功能子组件，重构前后端组件通信，提高可维护性。
+- **防爆心跳轮询与可见性监听**：将前端 `setInterval` 改为递归 `setTimeout`，并监听 `document.visibilitychange`，在标签页切入后台时暂停全部轮询以节省客户端/服务端开销，恢复可见时即刻同步唤醒。
+- **前端 API 请求统一封装**：提取 `apiFetch` 拦截包装，统一规范 JSON Header 并全局捕获处理 API 内部抛出的 error。
+
+### 部署集成
+- **Docker 多阶段构建与 dist 移出 Git**：不再在 Git 中提交编译后的 `dist/` 静态产物，在 `docker-compose.yml` 中调整构建上下文到根目录，并在 `Dockerfile` 引入 Multi-stage Build 容器内自动编译，实现极致一键部署。
+- **过滤规则优化**：项目根目录新增 `.dockerignore`，并在 `.gitignore` 补充编译排除，规避无关的 node_modules 和 data 传入镜像。
+
 ## v1.1.0 - 2026-06-24
 
 ### 重构优化

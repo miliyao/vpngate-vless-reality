@@ -22,3 +22,9 @@ backups/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# 前后端打包构建产物
+web/backend/dist/
+web/frontend/dist/
+dist/
+

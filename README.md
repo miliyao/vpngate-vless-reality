@@ -70,6 +70,18 @@ curl -fsSL https://raw.githubusercontent.com/miliyao/vpngate-vless-reality/main/
 该指令会自动安装所需系统依赖，克隆 GitHub 仓库，配置 Docker 与 Docker Compose，构建出口镜像并一键拉起控制面板。
 部署脚本会自动生成 `.env`，并在完成时输出面板账号和密码。
 
+### 一键卸载与清除数据
+若需要卸载整个系统并清除所有 Docker 出口容器与挂载数据，只需运行：
+```bash
+# 给予脚本执行权限并一键卸载 (加入 --purge 选项清除持久化数据)
+chmod +x scripts/uninstall.sh
+./scripts/uninstall.sh --purge
+```
+或者使用一键远程卸载：
+```bash
+curl -fsSL https://raw.githubusercontent.com/miliyao/vpngate-vless-reality/main/scripts/uninstall.sh | bash -s -- --purge
+```
+
 ---
 
 ### 方法二：Git 克隆后手动执行脚本
@@ -82,8 +94,8 @@ chmod +x deploy.sh
 
 ---
 
-### 方法三：手动逐步部署
-如果你希望手动控制部署的每一步，请依次运行以下命令：
+### 方法三：手动逐步部署 (支持容器多阶段构建)
+系统已全面升级为 **Docker 多阶段构建 (Multi-stage Build)**。本地或 VPS 主机上无需安装任何 Node.js/NPM 依赖，全部编译构建步骤在 Docker 容器内自动完成。
 
 #### 1. 构建出口镜像
 ```bash
@@ -91,17 +103,7 @@ chmod +x deploy.sh
 docker build -t vpngate-egress:latest ./docker/egress-image/
 ```
 
-### 2. 构建前端静态资源
-控制面板由 Node.js 后端静态托管打包后的前端。在启动面板前，需要对前端进行打包：
-```bash
-# 2. 进入前端目录，安装依赖并打包 (打包产物会自动写入 web/backend/dist)
-cd web/frontend
-npm install
-npm run build
-cd ../..
-```
-
-### 3. 配置环境变量
+#### 2. 配置环境变量
 ```bash
 cp .env.example .env
 nano .env
@@ -121,14 +123,14 @@ RE_DOMAINS=www.amd.com
 VPS_ADDRESS=
 ```
 
-### 4. 一键拉起控制面板
-在项目根目录下执行：
+#### 3. 编译并拉起控制面板 (全自动构建前后端)
+在项目根目录下执行 `--build` 选项，Docker 将自动在容器内构建前端 Vue 静态产物并打入后端运行镜像中，实现一步到位：
 ```bash
-# 4. 运行 Docker Compose 拉起控制面板服务和后台 Worker
-docker compose up -d
+# 自动多阶段联编前后端并后台运行
+docker compose up -d --build
 ```
 
-### 5. 访问面板与配置
+#### 4. 访问面板与配置
 * 打开浏览器访问：`http://你的服务器IP:3000`，输入 `.env` 中的 `PANEL_USERNAME` 和 `PANEL_PASSWORD`。
 * 选择你需要的出口国家/地区，点击创建或一键生成多地区。
 * 等待出口状态变为“运行中”后，复制单节点链接或订阅 URL，将其粘贴到客户端（如 v2rayN, Clash Meta, Sing-box）即可连接。

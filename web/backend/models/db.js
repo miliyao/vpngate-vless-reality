@@ -110,6 +110,17 @@ function now() {
   return Date.now();
 }
 
+const updateEgressStmtCache = {};
+
+function getUpdateEgressStmt(fields) {
+  const cacheKey = fields.sort().join(',');
+  if (!updateEgressStmtCache[cacheKey]) {
+    const setClause = fields.map(f => `${f}=@${f}`).join(', ');
+    updateEgressStmtCache[cacheKey] = db.prepare(`UPDATE egresses SET ${setClause}, updatedAt=@updatedAt WHERE name=@name`);
+  }
+  return updateEgressStmtCache[cacheKey];
+}
+
 const stmt = {
   getAllEgresses: db.prepare('SELECT * FROM egresses ORDER BY createdAt ASC'),
   getEgress: db.prepare('SELECT * FROM egresses WHERE name = ? LIMIT 1'),
@@ -122,33 +133,6 @@ const stmt = {
     @nodeIp, @nodeHostname, @status, @error, @currentEgressIp, @containerId,
     @createdAt, @updatedAt, @lastCheckTime, @latency, @failureCount
   )`),
-  updateEgress: db.prepare(`UPDATE egresses SET
-    region=@region, port=@port, uuid=@uuid, privateKey=@privateKey, publicKey=@publicKey, shortId=@shortId,
-    nodeIp=@nodeIp, nodeHostname=@nodeHostname, status=@status, error=@error, currentEgressIp=@currentEgressIp,
-    containerId=@containerId, createdAt=@createdAt, updatedAt=@updatedAt, lastCheckTime=@lastCheckTime,
-    latency=@latency, failureCount=@failureCount
-    WHERE name=@name`),
-  patchEgress: db.prepare(`UPDATE egresses SET
-    ${[
-      'region=@region',
-      'port=@port',
-      'uuid=@uuid',
-      'privateKey=@privateKey',
-      'publicKey=@publicKey',
-      'shortId=@shortId',
-      'nodeIp=@nodeIp',
-      'nodeHostname=@nodeHostname',
-      'status=@status',
-      'error=@error',
-      'currentEgressIp=@currentEgressIp',
-      'containerId=@containerId',
-      'createdAt=@createdAt',
-      'updatedAt=@updatedAt',
-      'lastCheckTime=@lastCheckTime',
-      'latency=@latency',
-      'failureCount=@failureCount'
-    ].join(', ')}
-    WHERE name=@name`),
   deleteEgress: db.prepare('DELETE FROM egresses WHERE name = ?'),
   countEgress: db.prepare('SELECT COUNT(1) AS c FROM egresses'),
   insertJob: db.prepare(`INSERT INTO jobs (type, target, payload, status, result, error, createdAt, updatedAt, startedAt, finishedAt)
@@ -188,16 +172,14 @@ module.exports = {
   },
 
   updateEgress(name, updates) {
-    const current = this.getEgress(name);
-    if (!current) return null;
-    const merged = {
-      ...current,
-      ...updates,
-      name,
-      updatedAt: updates.updatedAt || now()
-    };
-    stmt.patchEgress.run(merged);
-    return normalizeEgress(merged);
+    const fields = Object.keys(updates).filter(k => k !== 'name' && k !== 'updatedAt');
+    if (fields.length === 0) return this.getEgress(name);
+
+    const stmtParams = { ...updates, name, updatedAt: updates.updatedAt || now() };
+    const stmtToUse = getUpdateEgressStmt(fields);
+    const info = stmtToUse.run(stmtParams);
+    if (info.changes === 0) return null;
+    return this.getEgress(name);
   },
 
   deleteEgress(name) {

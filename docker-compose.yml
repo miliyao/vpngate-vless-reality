@@ -1,8 +1,8 @@
 services:
   web-panel:
     build:
-      context: ./web/backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: web/backend/Dockerfile
     container_name: vless-web-panel
     restart: always
     environment:
@@ -43,8 +43,8 @@ services:
 
   self-healing-worker:
     build:
-      context: ./web/backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: web/backend/Dockerfile
     container_name: vless-self-healing-worker
     restart: always
     environment:

@@ -22,8 +22,25 @@ function allocatePort() {
   throw new Error(`端口已耗尽 (${START_PORT}-${END_PORT})`);
 }
 
+async function limitConcurrency(tasks, limit) {
+  const results = [];
+  const executing = [];
+  for (const task of tasks) {
+    const p = Promise.resolve().then(() => task());
+    results.push(p);
+    if (limit <= tasks.length) {
+      const e = p.then(() => executing.splice(executing.indexOf(e), 1));
+      executing.push(e);
+      if (executing.length >= limit) {
+        await Promise.race(executing);
+      }
+    }
+  }
+  return Promise.all(results);
+}
+
 function egressDir(name) {
-  return path.join(__dirname, '..', 'data', 'egress', name);
+  return path.resolve(__dirname, '..', 'data', 'egress', name);
 }
 
 function ensureDir(name) {
@@ -92,7 +109,8 @@ async function rebuildEgress(name) {
 async function deleteEgress(name) {
   await dockerService.stopAndRemoveContainer(name);
   const dir = egressDir(name);
-  if (dir.startsWith(path.join(__dirname, '..', 'data', 'egress')) && fs.existsSync(dir)) {
+  const targetParent = path.resolve(__dirname, '..', 'data', 'egress');
+  if (dir.startsWith(targetParent) && dir !== targetParent && fs.existsSync(dir)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
   db.deleteEgress(name);
@@ -116,40 +134,47 @@ async function createAll(regions, uuid) {
   const newRegions = targetRegions.filter(r => !existingRegions.has(r));
   const created = [];
   const errors = [];
-  for (const region of newRegions) {
+  
+  const tasks = newRegions.map(region => async () => {
     try {
       const name = region.toLowerCase();
-      created.push(await createEgress({ name, region, uuid: clientUuid }));
+      const res = await createEgress({ name, region, uuid: clientUuid });
+      created.push(res);
     } catch (err) {
       errors.push({ region, error: err.message });
     }
-  }
+  });
+  await limitConcurrency(tasks, 3);
+  
   return { created, errors, skipped: targetRegions.filter(r => existingRegions.has(r)) };
 }
 
 async function rebuildAll() {
   const results = [];
   const list = db.getEgresses();
-  for (const e of list) {
+  const tasks = list.map(e => async () => {
     try {
-      results.push(await rebuildEgress(e.name));
+      const res = await rebuildEgress(e.name);
+      results.push(res);
     } catch (err) {
       results.push({ name: e.name, region: e.region, error: err.message });
     }
-  }
+  });
+  await limitConcurrency(tasks, 3);
   return results;
 }
 
 async function deleteAll() {
   const deleted = [];
-  for (const e of db.getEgresses()) {
+  const tasks = db.getEgresses().map(e => async () => {
     try {
       await deleteEgress(e.name);
       deleted.push(e.name);
     } catch (err) {
       deleted.push({ name: e.name, error: err.message });
     }
-  }
+  });
+  await limitConcurrency(tasks, 3);
   return deleted;
 }
 

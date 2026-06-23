@@ -73,8 +73,10 @@ fi
 echo "[*] 测试出口网络连通性并获取外网 IP..."
 VPN_IP=""
 for i in {1..3}; do
-    # 通过 tun0 强制路由获取当前外网 IP
-    VPN_IP=$(curl -s --interface tun0 --max-time 10 https://ipinfo.io/ip || true)
+    # 通过 tun0 强制路由获取当前外网 IP，采用多源备份以防止接口限流或故障
+    VPN_IP=$(curl -s --interface tun0 --max-time 6 https://api.ipify.org || \
+             curl -s --interface tun0 --max-time 6 https://ipinfo.io/ip || \
+             curl -s --interface tun0 --max-time 6 https://ifconfig.me/ip || true)
     if [ -n "$VPN_IP" ]; then
         echo "[+] VPN 出口建立成功！当前代理出口 IP 为: $VPN_IP"
         break
@@ -115,9 +117,9 @@ while true; do
     fi
 
     # 每 20 秒检测一次代理出口网络连通性
-    # 使用多源 IP 检测而非 google.com，避免特定域名被屏蔽导致健康探测误判
-    if ! curl -s --interface tun0 --max-time 8 https://ipinfo.io/ip >/dev/null 2>&1 && \
-       ! curl -s --interface tun0 --max-time 8 https://api.ipify.org >/dev/null 2>&1; then
+    # 使用不限流且无流量负担的 Generate 204 服务进行 HEAD 检测，避免 429 误判
+    if ! curl -sI --interface tun0 --max-time 5 http://www.gstatic.com/generate_204 >/dev/null 2>&1 && \
+       ! curl -sI --interface tun0 --max-time 5 http://detectportal.firefox.com/success.txt >/dev/null 2>&1; then
         # 注意：不能使用 ((...)) 算术运算，因为 set -e 下表达式结果为 0 会被视为失败退出
         FAILED_COUNT=$((FAILED_COUNT + 1))
         echo "[!] 连通性测试失败 ($FAILED_COUNT/3)"
