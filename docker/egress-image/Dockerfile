@@ -15,9 +15,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
-# 下载并安装 Xray-core
-RUN mkdir -p /usr/local/xray && \
-    curl -L https://github.com/XTLS/Xray-core/releases/download/v1.8.24/Xray-linux-64.zip -o /tmp/xray.zip && \
+# 下载并安装 Xray-core，按 VPS CPU 架构选择正确二进制
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+      amd64) xray_asset="Xray-linux-64.zip" ;; \
+      arm64) xray_asset="Xray-linux-arm64-v8a.zip" ;; \
+      armhf) xray_asset="Xray-linux-arm32-v7a.zip" ;; \
+      *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+    esac; \
+    mkdir -p /usr/local/xray && \
+    curl -fL "https://github.com/XTLS/Xray-core/releases/download/v1.8.24/${xray_asset}" -o /tmp/xray.zip && \
     unzip /tmp/xray.zip -d /usr/local/xray/ && \
     chmod +x /usr/local/xray/xray && \
     rm /tmp/xray.zip
