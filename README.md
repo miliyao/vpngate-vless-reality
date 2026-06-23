@@ -51,6 +51,7 @@ vpngate-vless-reality/
 ├── docker-compose.yml              # Web 面板与 Worker 编排文件
 ├── scripts/
 │   ├── backup.sh                   # 备份 data 与 .env
+│   ├── doctor.sh                   # 部署自检
 │   └── restore.sh                  # 从备份恢复 data 与 .env
 ├── .env.example                    # 生产环境配置示例
 ├── CHANGELOG.md                    # 版本变更记录
@@ -150,6 +151,9 @@ docker compose up -d
 ```bash
 # 查看服务状态
 docker compose ps
+
+# 一键自检
+./scripts/doctor.sh
 
 # 健康检查
 curl http://127.0.0.1:3000/healthz

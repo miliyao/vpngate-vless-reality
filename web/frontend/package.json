@@ -1,6 +1,6 @@
 {
   "name": "vless-reality-panel-frontend",
-  "version": "0.9.0-rc.3",
+  "version": "1.0.0",
   "description": "VLESS Reality + VPNGate 多出口管理面板前端",
   "type": "module",
   "scripts": {

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.0 - 2026-06-23
+
+- Promoted the project to the first stable release.
+- Added `scripts/doctor.sh` for deployment self-checks.
+- Included web health, authenticated API, Docker Compose, container health, and egress image checks in the release validation flow.
+
 ## v0.9.0-rc.3 - 2026-06-23
 
 - Added system status and backup/restore guidance to the web panel.
