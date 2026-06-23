@@ -165,10 +165,28 @@ async function copyLink(name) {
     if (!res.ok) throw new Error('拉取订阅链接失败');
     
     const result = await res.json();
-    await navigator.clipboard.writeText(result.link);
+    
+    // 兼容 HTTP 非安全上下文的复制方式
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(result.link);
+    } else {
+      // 降级复制方案
+      const textArea = document.createElement("textarea");
+      textArea.value = result.link;
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      const successful = document.execCommand("copy");
+      document.body.removeChild(textArea);
+      if (!successful) throw new Error("浏览器不支持复制操作");
+    }
+    
     showToast(`已成功复制 ${name} 的 VLESS 订阅链接！`, 'success');
   } catch (err) {
     showToast(`复制失败: ${err.message}`, 'error');
+    console.error('复制出错：', err);
   }
 }
 
