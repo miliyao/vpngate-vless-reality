@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const db = require('../models/db');
 const dockerService = require('./docker');
-const vpngateFetcher = require('./vpngate-fetcher');
+const egressOps = require('./egress-ops');
 
 const HEALTH_CHECK_INTERVAL = Number(process.env.HEALTH_CHECK_INTERVAL || 60000);
 const MAX_FAILURES = Number(process.env.MAX_FAILURES || 2);
@@ -38,21 +38,8 @@ function start() {
             db.updateEgress(name, { status: 'rebuilding', failureCount: 0, error: '', updatedAt: Date.now() });
 
             try {
-              const bestNode = await vpngateFetcher.getBestNode(egress.region);
-              const egressDir = path.join(__dirname, '..', 'data', 'egress', name);
-              if (!fs.existsSync(egressDir)) fs.mkdirSync(egressDir, { recursive: true });
-              fs.writeFileSync(path.join(egressDir, 'client.ovpn'), bestNode.ovpnConfig, 'utf-8');
-              db.updateEgress(name, {
-                nodeIp: bestNode.ip,
-                nodeHostname: bestNode.hostname,
-                latency: bestNode.ping,
-                updatedAt: Date.now()
-              });
-
-              const updatedEgress = db.getEgress(name) || egress;
-              const containerId = await dockerService.startEgressContainer(updatedEgress);
-              db.updateEgress(name, { containerId, status: 'running', error: '', failureCount: 0, updatedAt: Date.now() });
-              console.log(`[+] [自愈成功] ${name} -> ${bestNode.ip}`);
+              await egressOps.rebuildEgress(name);
+              console.log(`[+] [自愈成功] ${name} 完成漂移`);
             } catch (driftErr) {
               db.updateEgress(name, { status: 'error', error: `自愈失败: ${driftErr.message}`, updatedAt: Date.now() });
               console.error(`[-] [自愈失败] ${name}:`, driftErr.message);

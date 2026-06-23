@@ -4,8 +4,10 @@ import { ref, onMounted, computed } from 'vue';
 const API_BASE = '';
 const egressList = ref([]);
 const vpnRegions = ref([]);
+const jobs = ref([]);
 const loadingRegions = ref(false);
 const loadingList = ref(false);
+const loadingJobs = ref(false);
 const creatingEgress = ref(false);
 const creatingAll = ref(false);
 const formName = ref('');
@@ -33,7 +35,36 @@ const subModalB64 = ref('');
 const subUrl = ref('');
 const subCopied = ref(false);
 
+const jobDetailVisible = ref(false);
+const selectedJob = ref(null);
 const vpsAddress = ref('');
+
+const REGION_CN = {
+  JP: '日本',
+  KR: '韩国',
+  TH: '泰国',
+  RU: '俄罗斯',
+  RO: '罗马尼亚',
+  VN: '越南',
+  US: '美国',
+  HR: '克罗地亚',
+  CN: '中国',
+  HK: '中国香港',
+  TW: '中国台湾',
+  SG: '新加坡',
+  DE: '德国',
+  FR: '法国',
+  GB: '英国',
+  CA: '加拿大',
+  AU: '澳大利亚',
+  NL: '荷兰',
+  PL: '波兰',
+  BR: '巴西',
+  IN: '印度',
+  ID: '印度尼西亚',
+  MY: '马来西亚',
+  PH: '菲律宾'
+};
 
 function showToast(msg, type = 'success') {
   toastMessage.value = msg;
@@ -64,6 +95,53 @@ async function fetchRegions() {
   finally { loadingRegions.value = false; }
 }
 
+async function fetchJobs() {
+  loadingJobs.value = true;
+  try {
+    const res = await fetch(`${API_BASE}/api/egress/jobs?limit=20`);
+    if (!res.ok) throw new Error('拉取任务列表失败');
+    jobs.value = await res.json();
+  } catch (err) { showToast(err.message, 'error'); }
+  finally { loadingJobs.value = false; }
+}
+
+function regionName(code, fallback = '') {
+  if (!code) return fallback || '-';
+  return REGION_CN[String(code).toUpperCase()] || fallback || String(code).toUpperCase();
+}
+
+function jobBadge(job) {
+  return {
+    queued: 'job-queued',
+    running: 'job-running',
+    done: 'job-done',
+    failed: 'job-failed'
+  }[job.status] || 'job-queued';
+}
+
+function jobLabel(job) {
+  return {
+    queued: '排队中',
+    running: '执行中',
+    done: '已完成',
+    failed: '失败'
+  }[job.status] || job.status;
+}
+
+function updateJobHint(res, fallback) {
+  if (res && res.jobId) showToast(`${fallback}，任务 #${res.jobId}`, 'success');
+  else showToast(fallback, 'success');
+}
+
+function openJobDetail(job) {
+  selectedJob.value = job;
+  jobDetailVisible.value = true;
+}
+
+function prettyJson(value) {
+  return JSON.stringify(value || {}, null, 2);
+}
+
 async function createEgress() {
   if (!formName.value || !formRegion.value) { showToast('请输入名称并选择地区', 'error'); return; }
   creatingEgress.value = true;
@@ -74,10 +152,10 @@ async function createEgress() {
     });
     const r = await res.json();
     if (!res.ok) throw new Error(r.error || '创建失败');
-    showToast(`出口 ${formName.value} 已创建`, 'success');
     formName.value = ''; formUuid.value = '';
+    updateJobHint(r, r.message || '创建任务已提交');
     setTimeout(fetchEgressList, 2000);
-    setTimeout(fetchEgressList, 6000);
+    setTimeout(fetchJobs, 1000);
   } catch (err) { showToast(err.message, 'error'); }
   finally { creatingEgress.value = false; }
 }
@@ -92,10 +170,9 @@ async function createAllRegions() {
     });
     const r = await res.json();
     if (!res.ok) throw new Error(r.error || '批量创建失败');
-    showToast(`已提交 ${r.created.length} 个出口创建任务${r.errors.length > 0 ? '，' + r.errors.length + ' 个失败' : ''}`, 'success');
+    updateJobHint(r, r.message || '批量创建任务已提交');
     setTimeout(fetchEgressList, 3000);
-    setTimeout(fetchEgressList, 8000);
-    setTimeout(fetchEgressList, 15000);
+    setTimeout(fetchJobs, 1000);
   } catch (err) { showToast(err.message, 'error'); }
   finally { creatingAll.value = false; }
 }
@@ -108,8 +185,9 @@ async function rebuildEgress(name) {
     });
     const r = await res.json();
     if (!res.ok) throw new Error(r.error || '重建失败');
-    showToast(`${name} 正在漂移...`, 'success');
+    updateJobHint(r, `${name} 正在漂移`);
     setTimeout(fetchEgressList, 2000);
+    setTimeout(fetchJobs, 1000);
   } catch (err) { showToast(err.message, 'error'); }
 }
 
@@ -121,8 +199,9 @@ async function rebuildAll() {
     });
     const r = await res.json();
     if (!res.ok) throw new Error(r.error || '批量漂移失败');
-    showToast(`已对 ${r.results.length} 个出口下发漂移`, 'success');
+    updateJobHint(r, r.message || '批量漂移任务已提交');
     setTimeout(fetchEgressList, 3000);
+    setTimeout(fetchJobs, 1000);
   } catch (err) { showToast(err.message, 'error'); }
 }
 
@@ -135,8 +214,9 @@ async function deleteEgress(name) {
     });
     const r = await res.json();
     if (!res.ok) throw new Error(r.error || '删除失败');
-    showToast(`${name} 已删除`, 'success');
+    updateJobHint(r, `${name} 已删除`);
     fetchEgressList();
+    fetchJobs();
   } catch (err) { showToast(err.message, 'error'); }
 }
 
@@ -148,8 +228,9 @@ async function deleteAll() {
     });
     const r = await res.json();
     if (!res.ok) throw new Error(r.error || '删除失败');
-    showToast(`已删除 ${r.deleted.length} 个出口`, 'success');
+    updateJobHint(r, r.message || '删除全部任务已提交');
     fetchEgressList();
+    fetchJobs();
   } catch (err) { showToast(err.message, 'error'); }
 }
 
@@ -252,13 +333,14 @@ const stats = computed(() => ({
 onMounted(() => {
   fetchEgressList();
   fetchRegions();
+  fetchJobs();
   setInterval(fetchEgressList, 15000);
+  setInterval(fetchJobs, 3000);
 });
 </script>
 
 <template>
   <div class="container">
-    <!-- Toast -->
     <Transition name="toast">
       <div v-if="toastMessage" :class="['toast', `toast-${toastType}`]">
         <span v-if="toastType==='success'">&#10003;</span>
@@ -268,7 +350,6 @@ onMounted(() => {
       </div>
     </Transition>
 
-    <!-- Link Preview Modal -->
     <Transition name="fade">
       <div v-if="linkModalVisible" class="modal-bg" @click.self="linkModalVisible=false">
         <div class="modal glass-panel">
@@ -285,7 +366,6 @@ onMounted(() => {
       </div>
     </Transition>
 
-    <!-- Subscription Modal -->
     <Transition name="fade">
       <div v-if="subModalVisible" class="modal-bg" @click.self="subModalVisible=false">
         <div class="modal modal-wide glass-panel">
@@ -298,20 +378,15 @@ onMounted(() => {
             <button class="btn btn-primary" @click="copySubB64">{{ subCopied ? '已复制' : '复制订阅 Base64' }}</button>
             <button class="btn" @click="copyAllLinks">复制全部链接</button>
           </div>
-          <div class="link-box">
-            <code>{{ subUrl || `${window.location.origin}/api/egress/subscription.txt` }}</code>
-          </div>
+          <div class="link-box"><code>{{ subUrl || `${window.location.origin}/api/egress/subscription.txt` }}</code></div>
           <div class="sub-links">
-            <div v-for="link in subModalLinks" :key="link" class="sub-link-row" @click="copyText(link, '已复制单条链接')">
-              <code>{{ link }}</code>
-            </div>
+            <div v-for="link in subModalLinks" :key="link" class="sub-link-row" @click="copyText(link, '已复制单条链接')"><code>{{ link }}</code></div>
             <div v-if="subModalLinks.length===0" class="text-secondary" style="text-align:center;padding:24px">暂无出口</div>
           </div>
         </div>
       </div>
     </Transition>
 
-    <!-- Log Modal -->
     <Transition name="fade">
       <div v-if="logModalVisible" class="modal-bg" @click.self="logModalVisible=false">
         <div class="modal modal-wide glass-panel">
@@ -321,7 +396,35 @@ onMounted(() => {
       </div>
     </Transition>
 
-    <!-- Header -->
+    <Transition name="fade">
+      <div v-if="jobDetailVisible" class="modal-bg" @click.self="jobDetailVisible=false">
+        <div class="modal modal-wide glass-panel">
+          <div class="modal-head">
+            <div>
+              <h3>任务 #{{ selectedJob?.id }} 详情</h3>
+              <p class="text-secondary">{{ selectedJob?.type }} / {{ selectedJob?.target || '-' }}</p>
+            </div>
+            <button class="btn btn-sm" @click="jobDetailVisible=false">&times;</button>
+          </div>
+          <div v-if="selectedJob" class="job-detail-grid">
+            <div class="job-detail-item">
+              <span class="kv-k">状态</span>
+              <span :class="['job-pill', jobBadge(selectedJob)]">{{ jobLabel(selectedJob) }}</span>
+            </div>
+            <div class="job-detail-item">
+              <span class="kv-k">更新时间</span>
+              <span>{{ timeAgo(selectedJob.updatedAt) }}</span>
+            </div>
+          </div>
+          <div v-if="selectedJob?.error" class="detail-error">{{ selectedJob.error }}</div>
+          <h4 class="detail-title">请求参数</h4>
+          <pre class="detail-json">{{ prettyJson(selectedJob?.payload) }}</pre>
+          <h4 class="detail-title">执行结果</h4>
+          <pre class="detail-json">{{ prettyJson(selectedJob?.result) }}</pre>
+        </div>
+      </div>
+    </Transition>
+
     <header class="header">
       <div class="header-left">
         <h1>VLESS Reality 控制台</h1>
@@ -334,9 +437,7 @@ onMounted(() => {
       </div>
     </header>
 
-    <!-- Main -->
     <div class="main-grid">
-      <!-- Left Panel -->
       <aside class="panel glass-panel">
         <h2>创建出口</h2>
         <p class="text-secondary mb-16">自动获取 VPNGate 最优节点</p>
@@ -346,7 +447,7 @@ onMounted(() => {
           <label class="label">地区</label>
           <select v-model="formRegion" class="input" :disabled="creatingEgress || loadingRegions">
             <option v-if="loadingRegions" value="">加载中...</option>
-            <option v-for="r in vpnRegions" :key="r.code" :value="r.code">{{ getFlagEmoji(r.code) }} {{ r.name }} ({{ r.count }})</option>
+            <option v-for="r in vpnRegions" :key="r.code" :value="r.code">{{ getFlagEmoji(r.code) }} {{ regionName(r.code, r.name) }} ({{ r.count }})</option>
           </select>
           <label class="label">UUID <span class="text-secondary">(可选，留空自动生成)</span></label>
           <input v-model="formUuid" type="text" class="input" placeholder="留空则自动生成" :disabled="creatingEgress" />
@@ -374,7 +475,6 @@ onMounted(() => {
         </div>
       </aside>
 
-      <!-- Right: Cards -->
       <main>
         <div class="list-head">
           <h2>出口管理</h2>
@@ -388,7 +488,7 @@ onMounted(() => {
         <div class="egress-grid" v-else>
           <div v-for="eg in egressList" :key="eg.name" :class="['eg-card','glass-panel',`border-${getStatusClass(eg.status)}`]">
             <div class="eg-top">
-              <div class="eg-identity"><span class="eg-flag">{{ getFlagEmoji(eg.region) }}</span><div><div class="eg-name">{{ eg.name }}</div><div class="text-secondary">{{ eg.region }}</div></div></div>
+              <div class="eg-identity"><span class="eg-flag">{{ getFlagEmoji(eg.region) }}</span><div><div class="eg-name">{{ eg.name }}</div><div class="text-secondary">{{ regionName(eg.region) }} / {{ eg.region }}</div></div></div>
               <span :class="['pill',`pill-${getStatusClass(eg.status)}`]">{{ getStatusLabel(eg.status) }}</span>
             </div>
             <div class="eg-conn">
@@ -408,6 +508,26 @@ onMounted(() => {
           </div>
         </div>
 
+        <section class="jobs-section glass-panel">
+          <div class="list-head">
+            <div>
+              <h2>任务队列</h2>
+              <p class="text-secondary">最近 20 条任务</p>
+            </div>
+            <button class="btn btn-sm" @click="fetchJobs" :disabled="loadingJobs">{{ loadingJobs ? '...' : '刷新任务' }}</button>
+          </div>
+          <div class="jobs-list">
+            <div v-for="job in jobs" :key="job.id" class="job-row" @click="openJobDetail(job)">
+              <div class="job-main">
+                <span :class="['job-pill', jobBadge(job)]">{{ jobLabel(job) }}</span>
+                <span class="job-type">#{{ job.id }} {{ job.type }} / {{ job.target || '-' }}</span>
+                <span class="job-time">{{ timeAgo(job.updatedAt) }}</span>
+              </div>
+              <div class="job-error" v-if="job.error">{{ job.error }}</div>
+            </div>
+            <div v-if="jobs.length===0" class="text-secondary" style="padding:12px 0">暂无任务</div>
+          </div>
+        </section>
       </main>
     </div>
   </div>
@@ -458,43 +578,54 @@ onMounted(() => {
 .label{font-size:12px;font-weight:600;color:var(--text-secondary)}
 .input{background:rgba(0,0,0,.2);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);font-family:inherit;font-size:14px;padding:10px 14px;width:100%;outline:none;transition:border-color .2s,box-shadow .2s}
 .input:focus{border-color:var(--accent-color);box-shadow:0 0 0 2px var(--accent-glow)}
-.input-sm{font-size:12px;padding:6px 10px}
 .w-full{width:100%}
 .mb-16{margin-bottom:16px}
 
 .divider{height:1px;background:var(--border-color);margin:20px 0}
-
 .batch-btns{display:flex;flex-direction:column;gap:8px}
-
 .hint-box{margin-top:16px;background:rgba(88,101,242,.05);border:1px dashed rgba(88,101,242,.2);border-radius:8px;padding:12px;font-size:12px;color:var(--text-secondary);line-height:1.6}
 
 .list-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .list-head h2{font-size:17px;font-weight:700}
 .empty{text-align:center;padding:48px;color:var(--text-secondary)}
-
 .egress-grid{display:grid;grid-template-columns:1fr;gap:16px}
 @media(min-width:768px){.egress-grid{grid-template-columns:1fr 1fr}}
-
 .eg-card{display:flex;flex-direction:column;gap:14px;border-left:4px solid var(--border-color)}
 .border-success{border-left-color:var(--success-color)}
 .border-warning{border-left-color:var(--warning-color)}
 .border-danger{border-left-color:var(--danger-color)}
 .border-muted{border-left-color:var(--text-secondary)}
-
 .eg-top{display:flex;justify-content:space-between;align-items:center}
 .eg-identity{display:flex;align-items:center;gap:10px}
 .eg-flag{font-size:24px}
 .eg-name{font-size:15px;font-weight:700}
-
 .eg-conn{background:rgba(0,0,0,.15);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
 .conn-row{display:flex;justify-content:space-between;align-items:center;font-size:12px}
 .conn-label{color:var(--text-secondary)}
 .conn-val{font-weight:500}
 .eg-error{background:rgba(255,23,68,.08);border:1px solid rgba(255,23,68,.2);border-radius:6px;padding:6px 10px;font-size:12px;color:#ff5252}
-
 .eg-actions{display:flex;gap:6px;flex-wrap:wrap}
 .flex1{flex:1;min-width:0}
 .ico{min-width:42px;font-size:11px;font-weight:700}
+
+.jobs-section{margin-top:20px}
+.jobs-list{display:flex;flex-direction:column;gap:8px}
+.job-row{display:flex;flex-direction:column;gap:4px;padding:10px 12px;background:rgba(0,0,0,.12);border:1px solid var(--border-color);border-radius:8px}
+.job-row{cursor:pointer;transition:border-color .2s,background .2s}
+.job-row:hover{background:rgba(255,255,255,.03);border-color:rgba(88,101,242,.35)}
+.job-main{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.job-pill{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:700}
+.job-queued{background:rgba(255,145,0,.12);color:var(--warning-color)}
+.job-running{background:rgba(88,101,242,.12);color:#a5b4fc}
+.job-done{background:rgba(0,230,118,.12);color:var(--success-color)}
+.job-failed{background:rgba(255,23,68,.12);color:#ff5252}
+.job-type,.job-time{font-size:12px;color:var(--text-secondary)}
+.job-error{font-size:12px;color:#ff5252;word-break:break-word}
+.job-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.job-detail-item{display:flex;flex-direction:column;gap:6px;background:rgba(0,0,0,.14);border:1px solid var(--border-color);border-radius:8px;padding:10px}
+.detail-title{font-size:13px;font-weight:700;color:var(--text-secondary);margin-top:4px}
+.detail-json{max-height:220px;overflow:auto;background:rgba(0,0,0,.28);border:1px solid var(--border-color);border-radius:8px;padding:12px;font-size:12px;line-height:1.5;color:#d7e2f0}
+.detail-error{background:rgba(255,23,68,.08);border:1px solid rgba(255,23,68,.2);border-radius:8px;padding:10px;color:#ff5252;font-size:12px}
 
 .text-secondary{color:var(--text-secondary)}
 .text-success{color:var(--success-color)}
@@ -517,14 +648,8 @@ onMounted(() => {
 .pill-warning{background:rgba(255,145,0,.1);color:var(--warning-color);border:1px solid rgba(255,145,0,.2)}
 .pill-danger{background:rgba(255,23,68,.1);color:#ff5252;border:1px solid rgba(255,23,68,.2)}
 .pill-muted{background:rgba(139,155,180,.1);color:var(--text-secondary);border:1px solid rgba(139,155,180,.2)}
-.pill-sm{font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600}
-.pill-sm.pill-success{background:rgba(0,230,118,.1);color:var(--success-color)}
-.pill-sm.pill-warning{background:rgba(255,145,0,.1);color:var(--warning-color)}
-.pill-sm.pill-danger{background:rgba(255,23,68,.1);color:#ff5252}
-
 .spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-radius:50%;border-top-color:white;animation:spin 1s linear infinite;display:inline-block}
 @keyframes spin{to{transform:rotate(360deg)}}
-
 .glass-panel{background:var(--glass-bg);backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);border:1px solid var(--border-color);border-radius:12px;padding:20px;box-shadow:0 8px 32px rgba(0,0,0,.3)}
 .container{max-width:1200px;margin:0 auto;padding:24px 16px}
 @media(min-width:768px){.container{padding:32px 24px}}

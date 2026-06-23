@@ -1,113 +1,271 @@
-// 极简 JSON 文件数据库驱动，规避 sqlite3 二进制编译的平台依赖性问题
-// 中文注释，保证高可维护性
+// SQLite 数据库驱动，替代原 JSON 文件存储
 
 const fs = require('fs');
 const path = require('path');
+const Database = require('better-sqlite3');
 
-const DB_FILE = path.join(__dirname, '..', 'data', 'db.json');
-const DB_TMP_FILE = DB_FILE + '.tmp';
+const DATA_DIR = path.join(__dirname, '..', 'data');
+const DB_FILE = path.join(DATA_DIR, 'app.sqlite3');
 
-// 内存缓存层，避免每次健康检查都做完整的文件读写
-let dbCache = null;
-
-// 确保数据目录存在
 function ensureDirExists() {
-  const dir = path.dirname(DB_FILE);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
   }
 }
 
-// 初始化数据库
-function initDb() {
-  ensureDirExists();
-  if (!fs.existsSync(DB_FILE)) {
-    const defaultData = {
-      egresses: [],
-      settings: {
-        lastFetchedTime: 0
-      }
-    };
-    fs.writeFileSync(DB_FILE, JSON.stringify(defaultData, null, 2), 'utf-8');
-  }
-}
+ensureDirExists();
 
-// 读取数据（优先从内存缓存中读取，减少磁盘 IO）
-function readDb() {
-  if (dbCache) return dbCache;
-  initDb();
+const db = new Database(DB_FILE);
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS egresses (
+  name TEXT PRIMARY KEY,
+  region TEXT NOT NULL,
+  port INTEGER NOT NULL,
+  uuid TEXT NOT NULL,
+  privateKey TEXT NOT NULL,
+  publicKey TEXT NOT NULL,
+  shortId TEXT NOT NULL,
+  nodeIp TEXT NOT NULL,
+  nodeHostname TEXT NOT NULL,
+  status TEXT NOT NULL,
+  error TEXT NOT NULL DEFAULT '',
+  currentEgressIp TEXT NOT NULL DEFAULT '',
+  containerId TEXT NOT NULL DEFAULT '',
+  createdAt INTEGER NOT NULL,
+  updatedAt INTEGER NOT NULL,
+  lastCheckTime INTEGER NOT NULL,
+  latency INTEGER NOT NULL DEFAULT 0,
+  failureCount INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type TEXT NOT NULL,
+  target TEXT NOT NULL DEFAULT '',
+  payload TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'queued',
+  result TEXT NOT NULL DEFAULT '{}',
+  error TEXT NOT NULL DEFAULT '',
+  createdAt INTEGER NOT NULL,
+  updatedAt INTEGER NOT NULL,
+  startedAt INTEGER,
+  finishedAt INTEGER
+);
+`);
+
+const legacyJsonFile = path.join(DATA_DIR, 'db.json');
+if (stmtCountEgresses() === 0 && fs.existsSync(legacyJsonFile)) {
   try {
-    const content = fs.readFileSync(DB_FILE, 'utf-8');
-    dbCache = JSON.parse(content);
-    return dbCache;
-  } catch (error) {
-    console.error('读取数据库失败，尝试重建:', error);
-    dbCache = { egresses: [], settings: { lastFetchedTime: 0 } };
-    return dbCache;
-  }
-}
-
-// 原子写入数据（先写临时文件再 rename，防止写入中断导致 JSON 损坏）
-function writeDb(data) {
-  ensureDirExists();
-  dbCache = data; // 同步更新内存缓存
-  try {
-    fs.writeFileSync(DB_TMP_FILE, JSON.stringify(data, null, 2), 'utf-8');
-    fs.renameSync(DB_TMP_FILE, DB_FILE);
+    const legacy = JSON.parse(fs.readFileSync(legacyJsonFile, 'utf-8'));
+    if (Array.isArray(legacy.egresses)) {
+      const insertLegacy = db.transaction((egresses) => {
+        for (const e of egresses) {
+          if (!e || !e.name) continue;
+          db.prepare(`INSERT OR IGNORE INTO egresses (
+            name, region, port, uuid, privateKey, publicKey, shortId,
+            nodeIp, nodeHostname, status, error, currentEgressIp, containerId,
+            createdAt, updatedAt, lastCheckTime, latency, failureCount
+          ) VALUES (
+            @name, @region, @port, @uuid, @privateKey, @publicKey, @shortId,
+            @nodeIp, @nodeHostname, @status, @error, @currentEgressIp, @containerId,
+            @createdAt, @updatedAt, @lastCheckTime, @latency, @failureCount
+          )`).run({
+            name: e.name,
+            region: e.region || '',
+            port: Number(e.port || 0),
+            uuid: e.uuid || '',
+            privateKey: e.privateKey || '',
+            publicKey: e.publicKey || '',
+            shortId: e.shortId || '',
+            nodeIp: e.nodeIp || '',
+            nodeHostname: e.nodeHostname || '',
+            status: e.status || 'offline',
+            error: e.error || '',
+            currentEgressIp: e.currentEgressIp || '',
+            containerId: e.containerId || '',
+            createdAt: Number(e.createdAt || Date.now()),
+            updatedAt: Number(e.updatedAt || Date.now()),
+            lastCheckTime: Number(e.lastCheckTime || Date.now()),
+            latency: Number(e.latency || 0),
+            failureCount: Number(e.failureCount || 0)
+          });
+        }
+      });
+      insertLegacy(legacy.egresses);
+      console.log(`[+] 已从旧 JSON 数据库迁移 ${legacy.egresses.length} 条出口记录`);
+    }
   } catch (err) {
-    // rename 失败时回退到直接写入
-    console.error('原子写入失败，回退到直接写入:', err.message);
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    console.warn('[!] 旧 JSON 数据库迁移失败:', err.message);
   }
+}
+
+function stmtCountEgresses() {
+  return db.prepare('SELECT COUNT(1) AS c FROM egresses').get().c;
+}
+
+function now() {
+  return Date.now();
+}
+
+const stmt = {
+  getAllEgresses: db.prepare('SELECT * FROM egresses ORDER BY createdAt ASC'),
+  getEgress: db.prepare('SELECT * FROM egresses WHERE name = ? LIMIT 1'),
+  insertEgress: db.prepare(`INSERT INTO egresses (
+    name, region, port, uuid, privateKey, publicKey, shortId,
+    nodeIp, nodeHostname, status, error, currentEgressIp, containerId,
+    createdAt, updatedAt, lastCheckTime, latency, failureCount
+  ) VALUES (
+    @name, @region, @port, @uuid, @privateKey, @publicKey, @shortId,
+    @nodeIp, @nodeHostname, @status, @error, @currentEgressIp, @containerId,
+    @createdAt, @updatedAt, @lastCheckTime, @latency, @failureCount
+  )`),
+  updateEgress: db.prepare(`UPDATE egresses SET
+    region=@region, port=@port, uuid=@uuid, privateKey=@privateKey, publicKey=@publicKey, shortId=@shortId,
+    nodeIp=@nodeIp, nodeHostname=@nodeHostname, status=@status, error=@error, currentEgressIp=@currentEgressIp,
+    containerId=@containerId, createdAt=@createdAt, updatedAt=@updatedAt, lastCheckTime=@lastCheckTime,
+    latency=@latency, failureCount=@failureCount
+    WHERE name=@name`),
+  patchEgress: db.prepare(`UPDATE egresses SET
+    ${[
+      'region=@region',
+      'port=@port',
+      'uuid=@uuid',
+      'privateKey=@privateKey',
+      'publicKey=@publicKey',
+      'shortId=@shortId',
+      'nodeIp=@nodeIp',
+      'nodeHostname=@nodeHostname',
+      'status=@status',
+      'error=@error',
+      'currentEgressIp=@currentEgressIp',
+      'containerId=@containerId',
+      'createdAt=@createdAt',
+      'updatedAt=@updatedAt',
+      'lastCheckTime=@lastCheckTime',
+      'latency=@latency',
+      'failureCount=@failureCount'
+    ].join(', ')}
+    WHERE name=@name`),
+  deleteEgress: db.prepare('DELETE FROM egresses WHERE name = ?'),
+  countEgress: db.prepare('SELECT COUNT(1) AS c FROM egresses'),
+  insertJob: db.prepare(`INSERT INTO jobs (type, target, payload, status, result, error, createdAt, updatedAt, startedAt, finishedAt)
+    VALUES (@type, @target, @payload, @status, @result, @error, @createdAt, @updatedAt, @startedAt, @finishedAt)`),
+  updateJob: db.prepare(`UPDATE jobs SET status=@status, result=@result, error=@error, updatedAt=@updatedAt, startedAt=@startedAt, finishedAt=@finishedAt WHERE id=@id`),
+  getJob: db.prepare('SELECT * FROM jobs WHERE id = ? LIMIT 1'),
+  listJobs: db.prepare('SELECT * FROM jobs ORDER BY id DESC LIMIT ?')
+};
+
+function normalizeEgress(egress) {
+  return {
+    ...egress,
+    port: Number(egress.port),
+    createdAt: Number(egress.createdAt),
+    updatedAt: Number(egress.updatedAt),
+    lastCheckTime: Number(egress.lastCheckTime),
+    latency: Number(egress.latency || 0),
+    failureCount: Number(egress.failureCount || 0)
+  };
 }
 
 module.exports = {
-  // 获取所有出口
   getEgresses() {
-    const db = readDb();
-    return db.egresses;
+    return stmt.getAllEgresses.all().map(normalizeEgress);
   },
 
-  // 获取单个出口
   getEgress(name) {
-    const db = readDb();
-    return db.egresses.find(e => e.name === name);
+    const row = stmt.getEgress.get(name);
+    return row ? normalizeEgress(row) : null;
   },
 
-  // 添加出口
   addEgress(egress) {
-    const db = readDb();
-    // 检查重名
-    if (db.egresses.some(e => e.name === egress.name)) {
-      throw new Error(`已存在名为 ${egress.name} 的出口`);
-    }
-    db.egresses.push(egress);
-    writeDb(db);
+    stmt.insertEgress.run(egress);
   },
 
-  // 更新出口状态或属性
   updateEgress(name, updates) {
-    const db = readDb();
-    const index = db.egresses.findIndex(e => e.name === name);
-    if (index !== -1) {
-      db.egresses[index] = { ...db.egresses[index], ...updates, updatedAt: updates.updatedAt || Date.now() };
-      writeDb(db);
-      return db.egresses[index];
-    }
-    return null;
+    const current = this.getEgress(name);
+    if (!current) return null;
+    const merged = {
+      ...current,
+      ...updates,
+      name,
+      updatedAt: updates.updatedAt || now()
+    };
+    stmt.patchEgress.run(merged);
+    return normalizeEgress(merged);
   },
 
-  // 删除出口
   deleteEgress(name) {
-    const db = readDb();
-    const filtered = db.egresses.filter(e => e.name !== name);
-    db.egresses = filtered;
-    writeDb(db);
+    stmt.deleteEgress.run(name);
   },
 
-  // 统计出口数量，以便分配端口
   countEgress() {
-    const db = readDb();
-    return db.egresses.length;
+    return stmt.countEgress.get().c;
+  },
+
+  createJob({ type, target = '', payload = {} }) {
+    const ts = now();
+    const result = stmt.insertJob.run({
+      type,
+      target,
+      payload: JSON.stringify(payload),
+      status: 'queued',
+      result: '{}',
+      error: '',
+      createdAt: ts,
+      updatedAt: ts,
+      startedAt: null,
+      finishedAt: null
+    });
+    return this.getJob(result.lastInsertRowid);
+  },
+
+  listJobs(limit = 100) {
+    return stmt.listJobs.all(limit).map(job => ({
+      ...job,
+      payload: safeJsonParse(job.payload),
+      result: safeJsonParse(job.result)
+    }));
+  },
+
+  getJob(id) {
+    const job = stmt.getJob.get(id);
+    if (!job) return null;
+    return {
+      ...job,
+      payload: safeJsonParse(job.payload),
+      result: safeJsonParse(job.result)
+    };
+  },
+
+  updateJob(id, updates = {}) {
+    const current = stmt.getJob.get(id);
+    if (!current) return null;
+    const merged = {
+      ...current,
+      ...updates,
+      id,
+      updatedAt: updates.updatedAt || now()
+    };
+    stmt.updateJob.run({
+      id,
+      status: merged.status,
+      result: JSON.stringify(merged.result || {}),
+      error: merged.error || '',
+      updatedAt: merged.updatedAt,
+      startedAt: merged.startedAt || current.startedAt || null,
+      finishedAt: merged.finishedAt || current.finishedAt || null
+    });
+    return this.getJob(id);
   }
 };
+
+function safeJsonParse(v) {
+  try {
+    return JSON.parse(v || '{}');
+  } catch {
+    return {};
+  }
+}
