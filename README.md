@@ -99,3 +99,4 @@ docker compose up -d
 * 输入出口名称，选择你需要的出口国家（如 `JP`, `US`, `KR` 等），点击 **一键构建出口**。
 * 等待容器状态变为“运行中”后，点击 **复制 VLESS 订阅**，将其粘贴到客户端（如 v2rayN, Clash Meta, Sing-box）即可直接连接。
 * **Reality 混淆 SNI 域名**：默认配置已将 `www.asus.com` 用于握手混淆，你可以通过修改 `docker-compose.yml` 中的 `RE_DOMAINS` 环境变量来更改为您需要的安全域名。
+* 出口容器会动态监听 `44301-44400` 端口，请在 VPS 防火墙和云厂商安全组中放行该 TCP 端口段。
