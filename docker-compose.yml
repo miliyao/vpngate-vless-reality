@@ -9,10 +9,14 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - TZ=Asia/Shanghai
-      - RE_DOMAINS=www.amd.com
+      - PANEL_AUTH_ENABLED=${PANEL_AUTH_ENABLED:-true}
+      - PANEL_USERNAME=${PANEL_USERNAME:-admin}
+      - PANEL_PASSWORD=${PANEL_PASSWORD:?PANEL_PASSWORD is required. Copy .env.example to .env or run deploy.sh}
+      - VPS_ADDRESS=${VPS_ADDRESS:-}
+      - RE_DOMAINS=${RE_DOMAINS:-www.amd.com}
       # 实际实体机的数据目录的绝对路径，供 docker.js 在 docker.sock 模式下创建出口容器的卷绑定
       # 使用 PWD 的语法让其自动加载为执行 docker compose 时的工作目录
-      - HOST_DATA_PATH=${PWD}/data
+      - HOST_DATA_PATH=${HOST_DATA_PATH:-${PWD}/data}
     ports:
       - "${PANEL_PORT:-3000}:3000"
     volumes:
@@ -40,8 +44,8 @@ services:
     environment:
       - NODE_ENV=production
       - TZ=Asia/Shanghai
-      - RE_DOMAINS=www.amd.com
-      - HOST_DATA_PATH=${PWD}/data
+      - RE_DOMAINS=${RE_DOMAINS:-www.amd.com}
+      - HOST_DATA_PATH=${HOST_DATA_PATH:-${PWD}/data}
     command: ["npm", "run", "start:worker"]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

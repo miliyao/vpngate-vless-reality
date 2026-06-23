@@ -91,12 +91,49 @@ echo -e "${YELLOW}[*] 正在初始化数据挂载目录...${PLAIN}"
 mkdir -p ./data/egress
 mkdir -p ./config
 
-# 7. 一键拉起 Docker Compose 编排
+# 7. 初始化运行配置
+echo -e "${YELLOW}[*] 正在初始化面板运行配置 (.env)...${PLAIN}"
+generate_password() {
+    if command -v openssl &> /dev/null; then
+        openssl rand -base64 24 | tr -d '=+/' | cut -c1-20
+    else
+        tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 20
+    fi
+}
+
+ensure_env_value() {
+    local key="$1"
+    local value="$2"
+    if [ ! -f .env ] || ! grep -q "^${key}=" .env; then
+        echo "${key}=${value}" >> .env
+    fi
+}
+
+if [ ! -f .env ]; then
+    touch .env
+    chmod 600 .env
+fi
+
+ensure_env_value "PANEL_PORT" "3000"
+ensure_env_value "PANEL_AUTH_ENABLED" "true"
+ensure_env_value "PANEL_USERNAME" "admin"
+ensure_env_value "PANEL_PASSWORD" "$(generate_password)"
+ensure_env_value "VPS_ADDRESS" ""
+ensure_env_value "RE_DOMAINS" "www.amd.com"
+ensure_env_value "HOST_DATA_PATH" "$(pwd)/data"
+
+set -a
+. ./.env
+set +a
+echo -e "${GREEN}[+] 面板账号: ${PANEL_USERNAME}${PLAIN}"
+echo -e "${GREEN}[+] 面板密码已写入: $(pwd)/.env${PLAIN}"
+
+# 8. 一键拉起 Docker Compose 编排
 echo -e "${YELLOW}[*] 正在启动控制面板容器组...${PLAIN}"
 $COMPOSE_CMD down &> /dev/null || true
 $COMPOSE_CMD up -d
 
-# 8. 获取 VPS 外网 IP
+# 9. 获取 VPS 外网 IP
 echo -e "${YELLOW}[*] 正在获取 VPS 公网 IP 地址...${PLAIN}"
 VPS_IP=$(curl -s --max-time 5 https://ipinfo.io/ip || curl -s --max-time 5 https://api.ipify.org || echo "你的服务器IP")
 
@@ -104,12 +141,14 @@ echo -e "${BLUE}====================================================${PLAIN}"
 echo -e "${GREEN}[+] 部署全部就绪！${PLAIN}"
 echo -e "${BLUE}====================================================${PLAIN}"
 echo -e "控制面板访问地址: ${GREEN}http://${VPS_IP}:${PANEL_PORT:-3000}${PLAIN}"
-echo -e "默认 Reality 混淆域名: ${YELLOW}www.asus.com${PLAIN}"
+echo -e "控制面板账号: ${GREEN}${PANEL_USERNAME}${PLAIN}"
+echo -e "控制面板密码: ${YELLOW}${PANEL_PASSWORD}${PLAIN}"
+echo -e "默认 Reality 混淆域名: ${YELLOW}${RE_DOMAINS:-www.amd.com}${PLAIN}"
 echo -e ""
 echo -e "操作指引："
 echo -e "  1. 浏览器打开上面的面板地址。"
 echo -e "  2. 输入出口名称 (例如 jp-01)，选择目标国家/地区，点击一键构建。"
 echo -e "  3. 当出口卡片状态变为 ${GREEN}运行中${PLAIN} 且获取到动态出口 IP 后，即可复制 VLESS 订阅链接连接使用。"
-echo -e "  4. 若需修改混淆域名或端口，可随时编辑根目录下的 ${YELLOW}docker-compose.yml${PLAIN} 并重启面板。"
-echo -e "  5. 容器后台定时器每 60 秒会自动对出口连通性进行自愈检测，失效节点将自动“透明漂移”无需人工维护。"
+echo -e "  4. 若需修改账号、密码、混淆域名或端口，可编辑根目录下的 ${YELLOW}.env${PLAIN} 并重启面板。"
+echo -e "  5. 容器后台 Worker 每 60 秒会自动对出口连通性进行自愈检测，失效节点将自动“透明漂移”无需人工维护。"
 echo -e "${BLUE}====================================================${PLAIN}"

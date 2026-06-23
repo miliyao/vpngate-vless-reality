@@ -11,11 +11,43 @@ const vpngateRouter = require('./routes/vpngate');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const PANEL_USERNAME = process.env.PANEL_USERNAME || '';
+const PANEL_PASSWORD = process.env.PANEL_PASSWORD || '';
+const AUTH_ENABLED = process.env.PANEL_AUTH_ENABLED !== 'false' && Boolean(PANEL_USERNAME && PANEL_PASSWORD);
+
+function safeEqual(a, b) {
+  const left = Buffer.from(a || '');
+  const right = Buffer.from(b || '');
+  return left.length === right.length && require('crypto').timingSafeEqual(left, right);
+}
+
+function requirePanelAuth(req, res, next) {
+  if (!AUTH_ENABLED) return next();
+
+  const header = req.headers.authorization || '';
+  const [scheme, encoded] = header.split(' ');
+  if (scheme === 'Basic' && encoded) {
+    const decoded = Buffer.from(encoded, 'base64').toString('utf8');
+    const separator = decoded.indexOf(':');
+    const username = separator >= 0 ? decoded.slice(0, separator) : '';
+    const password = separator >= 0 ? decoded.slice(separator + 1) : '';
+    if (safeEqual(username, PANEL_USERNAME) && safeEqual(password, PANEL_PASSWORD)) {
+      return next();
+    }
+  }
+
+  res.set('WWW-Authenticate', 'Basic realm="VLESS Reality Panel", charset="UTF-8"');
+  if (req.path.startsWith('/api')) {
+    return res.status(401).json({ error: '未授权' });
+  }
+  return res.status(401).send('Unauthorized');
+}
 
 // 1. 中间件配置
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(requirePanelAuth);
 
 // 2. 路由分发
 app.use('/api/egress', egressRouter);

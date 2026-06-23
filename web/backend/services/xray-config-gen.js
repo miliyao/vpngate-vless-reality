@@ -32,8 +32,8 @@ function generateConfig({ uuid, privateKey, shortId, destDomain, serverName }, o
       .replace(/\{\{UUID\}\}/g, uuid)
       .replace(/\{\{PRIVATE_KEY\}\}/g, privateKey)
       .replace(/\{\{SHORT_ID\}\}/g, shortId)
-      .replace(/\{\{DEST_DOMAIN\}\}/g, destDomain || 'www.asus.com:443')
-      .replace(/\{\{SERVER_NAME\}\}/g, serverName || 'www.asus.com');
+      .replace(/\{\{DEST_DOMAIN\}\}/g, destDomain || 'www.amd.com:443')
+      .replace(/\{\{SERVER_NAME\}\}/g, serverName || 'www.amd.com');
 
     // 确保目标目录存在
     const outputDir = path.dirname(outputPath);

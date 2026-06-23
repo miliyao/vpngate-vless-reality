@@ -1,6 +1,6 @@
 # VLESS Reality 多出口自愈代理系统 (VPNGate Bridge)
 
-这是一个运行在 Docker 容器上的多地区出口代理管理系统。它允许你连接到单台国外 VPS 入口，但通过后台的 VPNGate 节点池建立多个不同的国家/地区代理出口。同时，系统内置了**定时健康检测与透明漂移 (Transparent Drifting) 自愈机制**，确保出口的高可用性与稳定性。
+这是一个运行在 Docker 容器上的多地区出口代理管理系统。它允许你连接到单台 VPS 入口，但通过后台的 VPNGate 节点建立多个不同国家/地区的代理出口。同时，系统内置任务队列、SQLite 持久化、订阅链接和**定时健康检测与透明漂移 (Transparent Drifting) 自愈机制**，用于提高出口的可维护性与稳定性。
 
 ---
 
@@ -12,9 +12,12 @@
 
 ### 2. 透明漂移自愈 (Transparent Drifting)
 VPNGate 的公共节点具有不确定性，经常会失效。本系统后台运行着一个健康监视器：
-* 后端主控每 60 秒对所有容器进行连通性（延迟与外网 IP）探测。
-* 如果判定某个出口连续 2 次失效，主控将自动联网抓取该地区最新的最佳节点，覆写配置文件并重启对应的出口容器。
+* 后台 Worker 每 60 秒对所有容器进行连通性（延迟与外网 IP）探测。
+* 如果判定某个出口连续 2 次失效，Worker 将自动联网抓取该地区最新的可用节点，覆写配置文件并重启对应的出口容器。
 * 由于 **Xray 的宿主机端口、UUID 客户端密钥、Reality 证书等完全保持不变**，客户端在节点漂移时无须做任何配置修改，即可在 5-15 秒内自动连通新 IP。
+
+### 3. 管理任务队列
+面板上的创建、删除、漂移和批量操作会先写入 SQLite 任务队列，再由独立 Worker 执行。这样 Web API 不会因为长任务阻塞，刷新页面后也能查看最近任务状态与错误详情。
 
 ---
 
@@ -28,11 +31,12 @@ vpngate-vless-reality/
 │       └── entrypoint.sh           # 出口网络启动及自愈脚本
 ├── web/
 │   ├── backend/
-│   │   ├── app.js                  # 控制面板 Express 入口，集成自愈守护进程
+│   │   ├── app.js                  # 控制面板 Express 入口
+│   │   ├── worker.js               # 任务队列与自愈 Worker
 │   │   ├── package.json            # 后端依赖配置
 │   │   ├── routes/                 # 路由控制接口 (出口 CRUD、VPNGate 数据)
 │   │   ├── services/               # 核心服务 (Dockerode控制、Reality密钥对生成)
-│   │   └── models/                 # 极简 JSON 数据库存储
+│   │   └── models/                 # SQLite 数据库存储
 │   └── frontend/
 │       ├── src/
 │       │   ├── App.vue             # 现代科技感仪表盘前端界面
@@ -41,7 +45,9 @@ vpngate-vless-reality/
 │       └── vite.config.js          # Vite 构建与代理配置
 ├── config/
 │   └── xray-config.template.json   # Xray 服务端 Reality 配置模板
-├── docker-compose.yml              # 统一一键编排文件
+├── docker-compose.yml              # Web 面板与 Worker 编排文件
+├── .env.example                    # 生产环境配置示例
+├── CHANGELOG.md                    # 版本变更记录
 └── README.md                       # 说明文档
 ```
 
@@ -55,6 +61,7 @@ vpngate-vless-reality/
 curl -fsSL https://raw.githubusercontent.com/miliyao/vpngate-vless-reality/main/deploy.sh | bash
 ```
 该指令会自动安装所需系统依赖，克隆 GitHub 仓库，配置 Docker 与 Docker Compose，构建出口镜像并一键拉起控制面板。
+部署脚本会自动生成 `.env`，并在完成时输出面板账号和密码。
 
 ---
 
@@ -68,7 +75,7 @@ chmod +x deploy.sh
 
 ---
 
-### 方法二：手动逐步部署
+### 方法三：手动逐步部署
 如果你希望手动控制部署的每一步，请依次运行以下命令：
 
 #### 1. 构建出口镜像
@@ -87,16 +94,66 @@ npm run build
 cd ../..
 ```
 
-### 3. 一键拉起控制面板
+### 3. 配置环境变量
+```bash
+cp .env.example .env
+nano .env
+```
+
+至少需要修改：
+```bash
+PANEL_PASSWORD=你的强密码
+HOST_DATA_PATH=/当前项目绝对路径/data
+```
+
+常用配置：
+```bash
+PANEL_PORT=3000
+PANEL_USERNAME=admin
+RE_DOMAINS=www.amd.com
+VPS_ADDRESS=
+```
+
+### 4. 一键拉起控制面板
 在项目根目录下执行：
 ```bash
-# 3. 运行 Docker Compose 拉起控制面板服务
+# 4. 运行 Docker Compose 拉起控制面板服务和后台 Worker
 docker compose up -d
 ```
 
-### 4. 访问面板与配置
-* 打开浏览器访问：`http://你的服务器IP:3000` 即可进入管理面板。
-* 输入出口名称，选择你需要的出口国家（如 `JP`, `US`, `KR` 等），点击 **一键构建出口**。
-* 等待容器状态变为“运行中”后，点击 **复制 VLESS 订阅**，将其粘贴到客户端（如 v2rayN, Clash Meta, Sing-box）即可直接连接。
-* **Reality 混淆 SNI 域名**：默认配置已将 `www.asus.com` 用于握手混淆，你可以通过修改 `docker-compose.yml` 中的 `RE_DOMAINS` 环境变量来更改为您需要的安全域名。
+### 5. 访问面板与配置
+* 打开浏览器访问：`http://你的服务器IP:3000`，输入 `.env` 中的 `PANEL_USERNAME` 和 `PANEL_PASSWORD`。
+* 选择你需要的出口国家/地区，点击创建或一键生成多地区。
+* 等待出口状态变为“运行中”后，复制单节点链接或订阅 URL，将其粘贴到客户端（如 v2rayN, Clash Meta, Sing-box）即可连接。
+* **Reality 混淆 SNI 域名**：默认配置为 `www.amd.com`，可以通过 `.env` 中的 `RE_DOMAINS` 修改。
 * 出口容器会动态监听 `44301-44400` 端口，请在 VPS 防火墙和云厂商安全组中放行该 TCP 端口段。
+
+---
+
+## 🔐 安全与备份
+
+* 面板默认启用 HTTP Basic Auth。请部署后立即保存 `.env` 中的密码，不要将 `.env` 提交到 Git。
+* 数据库位于 `data/app.sqlite3`，出口配置位于 `data/egress/`。迁移服务器前需要一起备份。
+* 建议只向可信 IP 开放面板端口；出口端口段 `44301-44400/tcp` 需要对客户端开放。
+* 如果前面有 Nginx/Caddy 反代，建议额外启用 HTTPS。
+
+---
+
+## 🧰 常用运维命令
+
+```bash
+# 查看服务状态
+docker compose ps
+
+# 查看面板日志
+docker logs -f vless-web-panel
+
+# 查看 Worker 日志
+docker logs -f vless-self-healing-worker
+
+# 修改 .env 后重启
+docker compose up -d
+
+# 备份数据
+tar -czf vless-reality-backup-$(date +%F).tar.gz data .env
+```
