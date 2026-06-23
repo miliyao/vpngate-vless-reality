@@ -418,7 +418,6 @@ const stats = computed(() => {
               <button 
                 @click="copyLink(egress.name)" 
                 class="btn btn-success flex-1"
-                :disabled="egress.status !== 'running'"
               >
                 📋 复制 VLESS 订阅
               </button>
