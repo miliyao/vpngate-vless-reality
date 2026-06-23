@@ -297,7 +297,7 @@ router.get('/:name/link', (req, res) => {
     vpsHost = vpsHost || 'your_vps_ip';
 
     // 拼接 VLESS Reality 标准连接协议
-    const link = `vless://${egress.uuid}@${vpsHost}:${egress.port}?type=tcp&security=reality&flow=xtls-rprx-vision&pbk=${egress.publicKey}&sid=${egress.shortId}&sni=${SERVER_NAME}#${egress.name}`;
+    const link = `vless://${egress.uuid}@${vpsHost}:${egress.port}?type=tcp&security=reality&flow=xtls-rprx-vision&pbk=${egress.publicKey}&sid=${egress.shortId}&sni=${SERVER_NAME}&fp=chrome&spx=%2F&headerType=none#${egress.name}`;
 
     res.json({ link });
   } catch (error) {
