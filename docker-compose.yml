@@ -9,7 +9,7 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - TZ=Asia/Shanghai
-      - RE_DOMAINS=www.asus.com
+      - RE_DOMAINS=www.amd.com
       # 实际实体机的数据目录的绝对路径，供 docker.js 在 docker.sock 模式下创建出口容器的卷绑定
       # 使用 PWD 的语法让其自动加载为执行 docker compose 时的工作目录
       - HOST_DATA_PATH=${PWD}/data
@@ -23,6 +23,30 @@ services:
       # 挂载 Xray 配置模板
       - ./config:/app/config
     # 限制日志文件大小，避免磁盘被打满
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - vless-net
+
+  self-healing-worker:
+    build:
+      context: ./web/backend
+      dockerfile: Dockerfile
+    container_name: vless-self-healing-worker
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - TZ=Asia/Shanghai
+      - RE_DOMAINS=www.amd.com
+      - HOST_DATA_PATH=${PWD}/data
+    command: ["npm", "run", "start:worker"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/app/data
+      - ./config:/app/config
     logging:
       driver: json-file
       options:

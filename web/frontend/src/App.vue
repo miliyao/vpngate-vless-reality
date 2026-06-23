@@ -1,30 +1,19 @@
 <script setup>
-// 前端仪表盘主页面（Vue 3 Composition API）
-// 中文注释，保证极致用户体验与清晰的数据双向绑定
-
 import { ref, onMounted, computed } from 'vue';
 
-// 接口基地址（开发环境下代理生效，生产环境下同域名托管）
 const API_BASE = '';
-
-// 状态定义
 const egressList = ref([]);
 const vpnRegions = ref([]);
-const vpnNodes = ref([]);
-
 const loadingRegions = ref(false);
 const loadingList = ref(false);
-const loadingNodes = ref(false);
 const creatingEgress = ref(false);
-
-// 新增出口表单
+const creatingAll = ref(false);
 const formName = ref('');
 const formRegion = ref('');
 const formUuid = ref('');
 
-// 提示消息通知
 const toastMessage = ref('');
-const toastType = ref('success'); // success, error, info
+const toastType = ref('success');
 let toastTimeout = null;
 
 const logModalVisible = ref(false);
@@ -32,1016 +21,511 @@ const logModalTitle = ref('');
 const logContent = ref('');
 const loadingLogs = ref(false);
 
+const linkModalVisible = ref(false);
+const linkModalName = ref('');
+const linkModalLink = ref('');
+const linkModalLoading = ref(false);
+const linkCopied = ref(false);
+
+const subModalVisible = ref(false);
+const subModalLinks = ref([]);
+const subModalB64 = ref('');
+const subUrl = ref('');
+const subCopied = ref(false);
+
+const vpsAddress = ref('');
+
 function showToast(msg, type = 'success') {
   toastMessage.value = msg;
   toastType.value = type;
   if (toastTimeout) clearTimeout(toastTimeout);
-  toastTimeout = setTimeout(() => {
-    toastMessage.value = '';
-  }, 4000);
+  toastTimeout = setTimeout(() => { toastMessage.value = ''; }, 4000);
 }
 
-// 1. 获取出口列表
 async function fetchEgressList() {
   loadingList.value = true;
   try {
     const res = await fetch(`${API_BASE}/api/egress/list`);
     if (!res.ok) throw new Error('拉取出口列表失败');
     egressList.value = await res.json();
-  } catch (err) {
-    showToast(err.message, 'error');
-  } finally {
-    loadingList.value = false;
-  }
+    if (!vpsAddress.value) vpsAddress.value = window.location.hostname || 'your_vps_ip';
+  } catch (err) { showToast(err.message, 'error'); }
+  finally { loadingList.value = false; }
 }
 
-// 2. 获取可选地区列表
 async function fetchRegions() {
   loadingRegions.value = true;
   try {
     const res = await fetch(`${API_BASE}/api/vpngate/regions`);
     if (!res.ok) throw new Error('拉取地区列表失败');
     vpnRegions.value = await res.json();
-    if (vpnRegions.value.length > 0 && !formRegion.value) {
-      formRegion.value = vpnRegions.value[0].code;
-    }
-  } catch (err) {
-    showToast(err.message, 'error');
-  } finally {
-    loadingRegions.value = false;
-  }
+    if (vpnRegions.value.length > 0 && !formRegion.value) formRegion.value = vpnRegions.value[0].code;
+  } catch (err) { showToast(err.message, 'error'); }
+  finally { loadingRegions.value = false; }
 }
 
-// 3. 获取 VPNGate 节点预览
-async function fetchVpnNodes() {
-  loadingNodes.value = true;
-  try {
-    const res = await fetch(`${API_BASE}/api/vpngate/nodes`);
-    if (!res.ok) throw new Error('拉取节点预览失败');
-    vpnNodes.value = await res.json();
-  } catch (err) {
-    showToast(err.message, 'error');
-  } finally {
-    loadingNodes.value = false;
-  }
-}
-
-// 4. 创建新出口
 async function createEgress() {
-  if (!formName.value || !formRegion.value) {
-    showToast('请输入出口名称并选择国家地区', 'error');
-    return;
-  }
-  
+  if (!formName.value || !formRegion.value) { showToast('请输入名称并选择地区', 'error'); return; }
   creatingEgress.value = true;
   try {
     const res = await fetch(`${API_BASE}/api/egress/create`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: formName.value.trim(),
-        region: formRegion.value,
-        uuid: formUuid.value.trim() || undefined
-      })
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: formName.value.trim(), region: formRegion.value, uuid: formUuid.value.trim() || undefined })
     });
-
-    const result = await res.json();
-    if (!res.ok) throw new Error(result.error || '创建出口失败');
-
-    showToast(`出口 ${formName.value} 部署指令已下发，正在初始化...`, 'success');
-    
-    // 重置表单
-    formName.value = '';
-    formUuid.value = '';
-    
-    // 延时刷新列表
-    setTimeout(fetchEgressList, 1500);
-  } catch (err) {
-    showToast(err.message, 'error');
-  } finally {
-    creatingEgress.value = false;
-  }
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.error || '创建失败');
+    showToast(`出口 ${formName.value} 已创建`, 'success');
+    formName.value = ''; formUuid.value = '';
+    setTimeout(fetchEgressList, 2000);
+    setTimeout(fetchEgressList, 6000);
+  } catch (err) { showToast(err.message, 'error'); }
+  finally { creatingEgress.value = false; }
 }
 
-// 5. 手动重建/漂移出口
+async function createAllRegions() {
+  if (!confirm('将为所有 VPNGate 可用地区各创建一个出口，确认？')) return;
+  creatingAll.value = true;
+  try {
+    const res = await fetch(`${API_BASE}/api/egress/create-all`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uuid: formUuid.value.trim() || undefined })
+    });
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.error || '批量创建失败');
+    showToast(`已提交 ${r.created.length} 个出口创建任务${r.errors.length > 0 ? '，' + r.errors.length + ' 个失败' : ''}`, 'success');
+    setTimeout(fetchEgressList, 3000);
+    setTimeout(fetchEgressList, 8000);
+    setTimeout(fetchEgressList, 15000);
+  } catch (err) { showToast(err.message, 'error'); }
+  finally { creatingAll.value = false; }
+}
+
 async function rebuildEgress(name) {
   try {
     const res = await fetch(`${API_BASE}/api/egress/rebuild`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name })
     });
-    
-    const result = await res.json();
-    if (!res.ok) throw new Error(result.error || '重建失败');
-    
-    showToast(`已成功为 ${name} 启动一键透明漂移...`, 'success');
-    fetchEgressList();
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.error || '重建失败');
+    showToast(`${name} 正在漂移...`, 'success');
+    setTimeout(fetchEgressList, 2000);
+  } catch (err) { showToast(err.message, 'error'); }
 }
 
-// 6. 删除出口
+async function rebuildAll() {
+  if (!confirm('将对所有出口执行透明漂移，确认？')) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/egress/rebuild-all`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }
+    });
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.error || '批量漂移失败');
+    showToast(`已对 ${r.results.length} 个出口下发漂移`, 'success');
+    setTimeout(fetchEgressList, 3000);
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
 async function deleteEgress(name) {
-  if (!confirm(`确定要删除并下线出口 ${name} 吗？`)) return;
-  
+  if (!confirm(`确定删除出口 ${name}？`)) return;
   try {
     const res = await fetch(`${API_BASE}/api/egress/delete`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name })
     });
-    
-    const result = await res.json();
-    if (!res.ok) throw new Error(result.error || '删除失败');
-    
-    showToast(`出口 ${name} 已彻底删除并清理`, 'success');
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.error || '删除失败');
+    showToast(`${name} 已删除`, 'success');
     fetchEgressList();
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
+  } catch (err) { showToast(err.message, 'error'); }
 }
 
-// 7. 获取并复制订阅链接
-async function copyLink(name) {
+async function deleteAll() {
+  if (!confirm('确定删除全部出口？此操作不可撤销！')) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/egress/delete-all`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }
+    });
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.error || '删除失败');
+    showToast(`已删除 ${r.deleted.length} 个出口`, 'success');
+    fetchEgressList();
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+async function openLinkModal(name) {
+  linkModalVisible.value = true; linkModalName.value = name;
+  linkModalLink.value = ''; linkModalLoading.value = true; linkCopied.value = false;
   try {
     const res = await fetch(`${API_BASE}/api/egress/${name}/link`);
-    if (!res.ok) throw new Error('拉取订阅链接失败');
-    
-    const result = await res.json();
-    
-    // 兼容 HTTP 非安全上下文的复制方式
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(result.link);
-    } else {
-      // 降级复制方案
-      const textArea = document.createElement("textarea");
-      textArea.value = result.link;
-      textArea.style.position = "fixed";
-      textArea.style.opacity = "0";
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-      const successful = document.execCommand("copy");
-      document.body.removeChild(textArea);
-      if (!successful) throw new Error("浏览器不支持复制操作");
-    }
-    
-    showToast(`已成功复制 ${name} 的 VLESS 订阅链接！`, 'success');
-  } catch (err) {
-    showToast(`复制失败: ${err.message}`, 'error');
-    console.error('复制出错：', err);
-  }
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.error || '获取链接失败');
+    linkModalLink.value = r.link;
+  } catch (err) { linkModalLink.value = '获取失败'; showToast(err.message, 'error'); }
+  finally { linkModalLoading.value = false; }
 }
 
-// 8. 查看出口容器日志
-async function viewLogs(name) {
-  logModalVisible.value = true;
-  logModalTitle.value = name;
-  logContent.value = '';
-  loadingLogs.value = true;
+async function openSubModal() {
+  subModalVisible.value = true; subModalLinks.value = []; subModalB64.value = ''; subUrl.value = ''; subCopied.value = false;
+  try {
+    const res = await fetch(`${API_BASE}/api/egress/subscription`);
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.error || '获取订阅失败');
+    subModalLinks.value = r.links; subModalB64.value = r.subscription;
+    subUrl.value = `${window.location.origin}/api/egress/subscription.txt`;
+  } catch (err) { showToast(err.message, 'error'); }
+}
 
+async function copyText(text, successMsg) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    showToast(successMsg || '已复制', 'success');
+    return true;
+  } catch (err) { showToast('复制失败', 'error'); return false; }
+}
+
+async function copyLinkFromModal() {
+  if (await copyText(linkModalLink.value, '链接已复制')) { linkCopied.value = true; setTimeout(() => linkCopied.value = false, 3000); }
+}
+
+async function copySubB64() {
+  if (await copyText(subModalB64.value, '订阅 Base64 已复制，可导入客户端')) { subCopied.value = true; setTimeout(() => subCopied.value = false, 3000); }
+}
+
+async function copySubUrl() {
+  if (await copyText(subUrl.value, '订阅 URL 已复制')) { subCopied.value = true; setTimeout(() => subCopied.value = false, 3000); }
+}
+
+async function copyAllLinks() {
+  await copyText(subModalLinks.value.join('\n'), '全部链接已复制');
+}
+
+async function viewLogs(name) {
+  logModalVisible.value = true; logModalTitle.value = name;
+  logContent.value = ''; loadingLogs.value = true;
   try {
     const res = await fetch(`${API_BASE}/api/egress/${name}/logs?tail=160`);
-    const result = await res.json();
-    if (!res.ok) throw new Error(result.error || '读取日志失败');
-    logContent.value = result.logs || '暂无日志输出';
-  } catch (err) {
-    logContent.value = `读取日志失败: ${err.message}`;
-    showToast(err.message, 'error');
-  } finally {
-    loadingLogs.value = false;
-  }
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.error || '读取日志失败');
+    logContent.value = r.logs || '暂无日志';
+  } catch (err) { logContent.value = '读取失败: ' + err.message; }
+  finally { loadingLogs.value = false; }
 }
 
-// 辅助状态翻译与颜色
-function getStatusLabel(status) {
-  switch (status) {
-    case 'running': return '运行中';
-    case 'starting': return '自愈/启动中';
-    case 'rebuilding': return '漂移重建中';
-    case 'error': return '链路异常';
-    case 'offline': return '已离线';
-    default: return status || '未知';
-  }
+function getStatusLabel(s) {
+  return { running:'运行中', starting:'启动中', rebuilding:'漂移中', error:'异常', offline:'离线' }[s] || s || '未知';
 }
-
-// 获取国旗 Emoji
-function getFlagEmoji(countryCode) {
-  if (!countryCode) return '🏳️';
-  const codePoints = countryCode
-    .toUpperCase()
-    .split('')
-    .map(char =>  127397 + char.charCodeAt(0));
+function getStatusClass(s) {
+  return { running:'success', starting:'warning', rebuilding:'warning', error:'danger', offline:'muted' }[s] || 'muted';
+}
+function getFlagEmoji(c) {
+  if (!c) return '';
+  try { return String.fromCodePoint(...c.toUpperCase().split('').map(x => 127397 + x.charCodeAt(0))); } catch { return c; }
+}
+function timeAgo(ts) {
+  if (!ts) return '-';
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return s + '秒前';
+  if (s < 3600) return Math.floor(s / 60) + '分钟前';
+  return Math.floor(s / 3600) + '小时前';
+}
+function parseLink(link) {
   try {
-    return String.fromCodePoint(...codePoints);
-  } catch {
-    return countryCode;
-  }
+    const u = new URL(link); const sp = u.searchParams;
+    return { uuid: u.username, host: u.hostname, port: u.port, sni: sp.get('sni')||'-', pbk: sp.get('pbk')||'-', sid: sp.get('sid')||'-', fp: sp.get('fp')||'-' };
+  } catch { return null; }
 }
 
-// 页面加载初始化
+const stats = computed(() => ({
+  total: egressList.value.length,
+  running: egressList.value.filter(e => e.status === 'running').length,
+  error: egressList.value.filter(e => e.status === 'error').length
+}));
+
 onMounted(() => {
   fetchEgressList();
   fetchRegions();
-  fetchVpnNodes();
-  
-  // 每 20 秒自动更新一次出口状态
-  setInterval(fetchEgressList, 20000);
-});
-
-// 计算统计指标
-const stats = computed(() => {
-  const total = egressList.value.length;
-  const running = egressList.value.filter(e => e.status === 'running').length;
-  return { total, running };
+  setInterval(fetchEgressList, 15000);
 });
 </script>
 
 <template>
   <div class="container">
-    <!-- 提示通知弹窗 -->
+    <!-- Toast -->
     <Transition name="toast">
       <div v-if="toastMessage" :class="['toast', `toast-${toastType}`]">
-        <span class="toast-icon">
-          <span v-if="toastType === 'success'">✓</span>
-          <span v-else-if="toastType === 'error'">✕</span>
-          <span v-else>ℹ</span>
-        </span>
+        <span v-if="toastType==='success'">&#10003;</span>
+        <span v-else-if="toastType==='error'">&#10007;</span>
+        <span v-else>&#9432;</span>
         {{ toastMessage }}
       </div>
     </Transition>
 
-    <Transition name="toast">
-      <div v-if="logModalVisible" class="log-modal-backdrop" @click.self="logModalVisible = false">
-        <div class="log-modal glass-panel">
-          <div class="log-modal-head">
-            <div>
-              <h3>{{ logModalTitle }} 容器日志</h3>
-              <p>最近 160 行 OpenVPN / Xray 启动输出</p>
+    <!-- Link Preview Modal -->
+    <Transition name="fade">
+      <div v-if="linkModalVisible" class="modal-bg" @click.self="linkModalVisible=false">
+        <div class="modal glass-panel">
+          <div class="modal-head"><h3>{{ linkModalName }} 订阅链接</h3><button class="btn btn-sm" @click="linkModalVisible=false">&times;</button></div>
+          <div v-if="linkModalLoading" class="modal-loading">获取中...</div>
+          <template v-else>
+            <div class="link-breakdown" v-if="parseLink(linkModalLink)">
+              <div class="kv" v-for="(v,k) in parseLink(linkModalLink)" :key="k"><span class="kv-k">{{ k }}</span><span class="kv-v mono">{{ v }}</span></div>
             </div>
-            <button class="btn btn-icon" @click="logModalVisible = false">✕</button>
-          </div>
-          <pre class="log-output">{{ loadingLogs ? '正在读取日志...' : logContent }}</pre>
+            <div class="link-box"><code>{{ linkModalLink }}</code></div>
+            <div class="modal-actions"><button class="btn btn-primary" @click="copyLinkFromModal">{{ linkCopied ? '已复制' : '复制链接' }}</button></div>
+          </template>
         </div>
       </div>
     </Transition>
 
-    <!-- 顶部页眉 -->
-    <header class="header-section">
-      <div class="header-logo">
-        <span class="logo-emoji">🛡️</span>
-        <div>
-          <h1>VLESS Reality 控制台</h1>
-          <p>基于 VPNGate 与 Docker 容器的多出口透明自愈代理方案</p>
+    <!-- Subscription Modal -->
+    <Transition name="fade">
+      <div v-if="subModalVisible" class="modal-bg" @click.self="subModalVisible=false">
+        <div class="modal modal-wide glass-panel">
+          <div class="modal-head">
+            <div><h3>订阅管理</h3><p class="text-secondary">{{ subModalLinks.length }} 个出口 · 可导入 v2rayN / Clash Meta / Sing-box</p></div>
+            <button class="btn btn-sm" @click="subModalVisible=false">&times;</button>
+          </div>
+          <div class="sub-actions">
+            <button class="btn btn-success" @click="copySubUrl">复制订阅 URL</button>
+            <button class="btn btn-primary" @click="copySubB64">{{ subCopied ? '已复制' : '复制订阅 Base64' }}</button>
+            <button class="btn" @click="copyAllLinks">复制全部链接</button>
+          </div>
+          <div class="link-box">
+            <code>{{ subUrl || `${window.location.origin}/api/egress/subscription.txt` }}</code>
+          </div>
+          <div class="sub-links">
+            <div v-for="link in subModalLinks" :key="link" class="sub-link-row" @click="copyText(link, '已复制单条链接')">
+              <code>{{ link }}</code>
+            </div>
+            <div v-if="subModalLinks.length===0" class="text-secondary" style="text-align:center;padding:24px">暂无出口</div>
+          </div>
         </div>
       </div>
-      
-      <!-- 汇总状态卡 -->
-      <div class="status-summary">
-        <div class="summary-item">
-          <div class="val">{{ stats.total }}</div>
-          <div class="lbl">已建出口</div>
+    </Transition>
+
+    <!-- Log Modal -->
+    <Transition name="fade">
+      <div v-if="logModalVisible" class="modal-bg" @click.self="logModalVisible=false">
+        <div class="modal modal-wide glass-panel">
+          <div class="modal-head"><div><h3>{{ logModalTitle }} 日志</h3></div><button class="btn btn-sm" @click="logModalVisible=false">&times;</button></div>
+          <pre class="log-output">{{ loadingLogs ? '读取中...' : logContent }}</pre>
         </div>
-        <div class="summary-divider"></div>
-        <div class="summary-item">
-          <div class="val text-success">{{ stats.running }}</div>
-          <div class="lbl">正常运行</div>
-        </div>
+      </div>
+    </Transition>
+
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <h1>VLESS Reality 控制台</h1>
+        <p class="text-secondary">多出口透明自愈代理</p>
+      </div>
+      <div class="header-stats">
+        <div class="stat"><span class="stat-val">{{ stats.total }}</span><span class="stat-lbl">出口</span></div>
+        <div class="stat"><span class="stat-val text-success">{{ stats.running }}</span><span class="stat-lbl">正常</span></div>
+        <div class="stat" v-if="stats.error"><span class="stat-val text-danger">{{ stats.error }}</span><span class="stat-lbl">异常</span></div>
       </div>
     </header>
 
-    <!-- 主面板网格布局 -->
-    <div class="grid-cols-3">
-      <!-- 左栏：新增出口表单 -->
-      <div class="glass-panel col-span-1">
-        <h2 class="panel-title">🚀 快捷创建出口</h2>
-        <p class="panel-subtitle">后端将自动获取指定地区的高分可用节点建立 VPN 桥接</p>
-        
-        <form @submit.prevent="createEgress" class="form-container">
-          <div class="form-group">
-            <label class="form-label">出口唯一标识名称 (仅英文数字)</label>
-            <input 
-              v-model="formName" 
-              type="text" 
-              class="input-field" 
-              placeholder="例如: jp-tokyo-01" 
-              required
-              :disabled="creatingEgress"
-            />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">目标国家/地区 (基于 VPNGate 实测节点数)</label>
-            <div class="select-wrapper">
-              <select 
-                v-model="formRegion" 
-                class="input-field select-field" 
-                :disabled="creatingEgress || loadingRegions"
-              >
-                <option v-if="loadingRegions" value="">正在拉取国家列表...</option>
-                <option 
-                  v-for="reg in vpnRegions" 
-                  :key="reg.code" 
-                  :value="reg.code"
-                >
-                  {{ getFlagEmoji(reg.code) }} {{ reg.name }} ({{ reg.count }} 节点可用)
-                </option>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">自定义客户端 UUID (留空自动生成)</label>
-            <input 
-              v-model="formUuid" 
-              type="text" 
-              class="input-field" 
-              placeholder="格式: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              :disabled="creatingEgress"
-            />
-          </div>
-
-          <button 
-            type="submit" 
-            class="btn btn-primary w-full" 
-            :disabled="creatingEgress"
-          >
+    <!-- Main -->
+    <div class="main-grid">
+      <!-- Left Panel -->
+      <aside class="panel glass-panel">
+        <h2>创建出口</h2>
+        <p class="text-secondary mb-16">自动获取 VPNGate 最优节点</p>
+        <form @submit.prevent="createEgress" class="form">
+          <label class="label">名称</label>
+          <input v-model="formName" type="text" class="input" placeholder="如 jp-01" required :disabled="creatingEgress" />
+          <label class="label">地区</label>
+          <select v-model="formRegion" class="input" :disabled="creatingEgress || loadingRegions">
+            <option v-if="loadingRegions" value="">加载中...</option>
+            <option v-for="r in vpnRegions" :key="r.code" :value="r.code">{{ getFlagEmoji(r.code) }} {{ r.name }} ({{ r.count }})</option>
+          </select>
+          <label class="label">UUID <span class="text-secondary">(可选，留空自动生成)</span></label>
+          <input v-model="formUuid" type="text" class="input" placeholder="留空则自动生成" :disabled="creatingEgress" />
+          <button type="submit" class="btn btn-primary w-full" :disabled="creatingEgress">
             <span v-if="creatingEgress" class="spinner"></span>
-            {{ creatingEgress ? '正在拉取节点并部署容器...' : '一键构建出口' }}
+            {{ creatingEgress ? '部署中...' : '构建单个出口' }}
           </button>
         </form>
 
-        <!-- 透明自愈技术原理科普 -->
-        <div class="tech-card">
-          <h4>💡 出口稳定性保障原理：</h4>
-          <ul>
-            <li>容器内建网络自愈，当 VPNGate 节点因波动掉线，OpenVPN 会不断尝试重连。</li>
-            <li>若出口彻底损坏，后端主控在 60s 内自动触发<strong>“透明漂移”</strong>。</li>
-            <li>系统将拉取该地区最新最佳节点并重建容器，由于 <strong>Xray 侦听端口、UUID 与 Reality 密钥绝不改变</strong>，因此您的客户端<strong>无需任何修改</strong>，即可透明漂移。</li>
-          </ul>
-        </div>
-      </div>
-
-      <!-- 右栏（合并两列宽）：出口卡片列表 -->
-      <div class="col-span-2">
-        <div class="list-header">
-          <h2 class="panel-title">🛡️ 活跃出口容器管理</h2>
-          <button @click="fetchEgressList" class="btn btn-icon" :disabled="loadingList">
-            <span :class="['refresh-icon', { 'spinning': loadingList }]">🔄</span> 刷新状态
+        <div class="divider"></div>
+        <h2>批量操作</h2>
+        <p class="text-secondary mb-16">一键管理全部地区出口</p>
+        <div class="batch-btns">
+          <button class="btn btn-primary w-full" @click="createAllRegions" :disabled="creatingAll">
+            <span v-if="creatingAll" class="spinner"></span>
+            {{ creatingAll ? '正在创建...' : '一键创建全部地区' }}
           </button>
+          <button class="btn w-full" @click="openSubModal">查看/复制订阅</button>
+          <button class="btn w-full" @click="rebuildAll" :disabled="egressList.length===0">全部漂移</button>
+          <button class="btn btn-danger w-full" @click="deleteAll" :disabled="egressList.length===0">删除全部</button>
         </div>
 
-        <div v-if="egressList.length === 0" class="empty-state glass-panel">
-          <span class="empty-emoji">🌐</span>
-          <h3>暂无已创建的代理出口</h3>
-          <p>请在左侧面板选择国家/地区，快速部署您的第一个 VLESS 出口。</p>
+        <div class="hint-box">
+          <p><strong>自愈</strong>：出口连续 2 次失败后自动漂移至同地区新节点，客户端配置不变。</p>
+        </div>
+      </aside>
+
+      <!-- Right: Cards -->
+      <main>
+        <div class="list-head">
+          <h2>出口管理</h2>
+          <button class="btn btn-sm" @click="fetchEgressList" :disabled="loadingList">{{ loadingList ? '...' : '刷新' }}</button>
+        </div>
+
+        <div v-if="egressList.length===0" class="empty glass-panel">
+          <p>暂无出口，从左侧创建</p>
         </div>
 
         <div class="egress-grid" v-else>
-          <div 
-            v-for="egress in egressList" 
-            :key="egress.name" 
-            :class="['egress-card', 'glass-panel', `status-border-${egress.status}`]"
-          >
-            <!-- 卡片头部 -->
-            <div class="card-head">
-              <div class="card-title-group">
-                <span class="card-flag">{{ getFlagEmoji(egress.region) }}</span>
-                <div>
-                  <h3 class="card-name">{{ egress.name }}</h3>
-                  <span class="card-region-tag">{{ egress.region }} 出口</span>
-                </div>
-              </div>
-              
-              <span :class="['badge', `badge-${egress.status}`]">
-                <span class="badge-dot"></span>
-                {{ getStatusLabel(egress.status) }}
-              </span>
+          <div v-for="eg in egressList" :key="eg.name" :class="['eg-card','glass-panel',`border-${getStatusClass(eg.status)}`]">
+            <div class="eg-top">
+              <div class="eg-identity"><span class="eg-flag">{{ getFlagEmoji(eg.region) }}</span><div><div class="eg-name">{{ eg.name }}</div><div class="text-secondary">{{ eg.region }}</div></div></div>
+              <span :class="['pill',`pill-${getStatusClass(eg.status)}`]">{{ getStatusLabel(eg.status) }}</span>
             </div>
-
-            <!-- 卡片信息区 -->
-            <div class="card-info">
-              <div class="info-row">
-                <span class="info-label">入站地址:</span>
-                <span class="info-value text-glow">{{ egress.port }} (VLESS+TCP)</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">VPN 节点:</span>
-                <span class="info-value font-mono truncate" :title="egress.nodeHostname">
-                  {{ egress.nodeIp || '获取中...' }}
-                </span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">真实出口 IP:</span>
-                <span 
-                  :class="[
-                    'info-value', 'font-bold',
-                    egress.currentEgressIp === 'error' || egress.currentEgressIp === 'offline' 
-                      ? 'text-danger' 
-                      : 'text-success'
-                  ]"
-                >
-                  {{ egress.currentEgressIp || '检测中...' }}
-                </span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">健康判定:</span>
-                <span class="info-value font-mono text-secondary">
-                  延迟 {{ egress.latency || 0 }}ms | 检测于 {{ new Date(egress.lastCheckTime).toLocaleTimeString() }}
-                </span>
-              </div>
-              <div v-if="egress.error" class="info-row">
-                <span class="info-label">错误信息:</span>
-                <span class="info-value text-danger truncate" :title="egress.error">
-                  {{ egress.error }}
-                </span>
-              </div>
+            <div class="eg-conn">
+              <div class="conn-row"><span class="conn-label">入口</span><span class="conn-val mono">{{ vpsAddress }}:{{ eg.port }}</span></div>
+              <div class="conn-row"><span class="conn-label">VPN</span><span class="conn-val mono">{{ eg.nodeIp || '...' }}</span></div>
+              <div class="conn-row"><span class="conn-label">出口IP</span><span :class="['conn-val','mono',eg.currentEgressIp&&eg.currentEgressIp!=='error'&&eg.currentEgressIp!=='offline'?'text-success':'text-danger']">{{ eg.currentEgressIp || '...' }}</span></div>
+              <div class="conn-row"><span class="conn-label">延迟</span><span class="conn-val">{{ eg.latency||'-' }}ms</span></div>
+              <div class="conn-row"><span class="conn-label">检测</span><span class="conn-val">{{ timeAgo(eg.lastCheckTime) }}</span></div>
             </div>
-
-            <!-- 卡片操作区 -->
-            <div class="card-actions">
-              <button 
-                @click="copyLink(egress.name)" 
-                class="btn btn-success flex-1"
-              >
-                📋 复制 VLESS 订阅
-              </button>
-              
-              <button 
-                @click="rebuildEgress(egress.name)" 
-                class="btn flex-1"
-                title="保持入站配置不变，自动优选并替换底层 VPN 出口节点"
-                :disabled="egress.status === 'starting'"
-              >
-                ⚡ 透明漂移
-              </button>
-
-              <button
-                @click="viewLogs(egress.name)"
-                class="btn btn-icon"
-                title="查看容器日志"
-              >
-                📜
-              </button>
-
-              <button 
-                @click="deleteEgress(egress.name)" 
-                class="btn btn-danger btn-icon"
-                title="删除下线"
-              >
-                🗑️
-              </button>
+            <div v-if="eg.error" class="eg-error">{{ eg.error }}</div>
+            <div class="eg-actions">
+              <button class="btn btn-success btn-sm flex1" @click="openLinkModal(eg.name)">订阅</button>
+              <button class="btn btn-sm flex1" @click="rebuildEgress(eg.name)" :disabled="eg.status==='starting'">漂移</button>
+              <button class="btn btn-sm ico" @click="viewLogs(eg.name)">LOG</button>
+              <button class="btn btn-danger btn-sm ico" @click="deleteEgress(eg.name)">DEL</button>
             </div>
           </div>
         </div>
-      </div>
+
+      </main>
     </div>
-
-    <!-- 底部：VPNGate 高分节点监控预览 -->
-    <section class="nodes-section glass-panel">
-      <div class="section-head">
-        <div>
-          <h3>🌐 VPNGate 节点监控看板</h3>
-          <p>当前拉取到的最优可用公共 VPN 节点预览，作为漂移池候选</p>
-        </div>
-        <button @click="fetchVpnNodes" class="btn" :disabled="loadingNodes">
-          {{ loadingNodes ? '正在更新...' : '拉取最新数据' }}
-        </button>
-      </div>
-
-      <div class="table-container">
-        <table class="nodes-table">
-          <thead>
-            <tr>
-              <th>国家地区</th>
-              <th>IP / Hostname</th>
-              <th>综合评分</th>
-              <th>响应延迟</th>
-              <th>活跃会话</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="node in vpnNodes" :key="node.ip + node.hostname">
-              <td>
-                <span class="table-flag">{{ getFlagEmoji(node.region) }}</span>
-                {{ node.country }} ({{ node.region }})
-              </td>
-              <td class="font-mono">{{ node.ip }}</td>
-              <td class="text-success font-bold">{{ node.score.toLocaleString() }}</td>
-              <td>
-                <span 
-                  :class="[
-                    'badge', 
-                    node.ping < 100 ? 'badge-success' : node.ping < 250 ? 'badge-starting' : 'badge-error'
-                  ]"
-                >
-                  {{ node.ping }} ms
-                </span>
-              </td>
-              <td>👥 {{ node.sessions }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
   </div>
 </template>
 
 <style scoped>
-/* 局部样式，与全局精美科技感融合 */
-
-.toast {
-  position: fixed;
-  top: 24px;
-  right: 24px;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 24px;
-  border-radius: 12px;
-  backdrop-filter: blur(20px);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-  font-weight: 500;
-  animation: toast-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.toast-success {
-  background: rgba(0, 230, 118, 0.15);
-  border: 1px solid rgba(0, 230, 118, 0.3);
-  color: var(--success-color);
-}
-
-.toast-error {
-  background: rgba(255, 23, 68, 0.15);
-  border: 1px solid rgba(255, 23, 68, 0.3);
-  color: #ff5252;
-}
-
-@keyframes toast-in {
-  from { transform: translateY(-20px) scale(0.9); opacity: 0; }
-  to { transform: translateY(0) scale(1); opacity: 1; }
-}
-
-/* Transitions */
-.toast-enter-active, .toast-leave-active {
-  transition: all 0.3s;
-}
-.toast-enter-from, .toast-leave-to {
-  opacity: 0;
-  transform: translateY(-20px);
-}
-
-.log-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 900;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(8px);
-}
-
-.log-modal {
-  width: min(900px, 100%);
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.log-modal-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.log-modal-head h3 {
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.log-modal-head p {
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-.log-output {
-  min-height: 260px;
-  max-height: 58vh;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 16px;
-  color: #d7e2f0;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-/* 页眉 */
-.header-section {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 40px;
-  gap: 20px;
-}
-
-@media (min-width: 768px) {
-  .header-section {
-    flex-direction: row;
-    align-items: center;
-  }
-}
-
-.header-logo {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.logo-emoji {
-  font-size: 40px;
-}
-
-.header-logo h1 {
-  font-size: 28px;
-  font-weight: 800;
-  background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  margin-bottom: 4px;
-}
-
-.header-logo p {
-  color: var(--text-secondary);
-  font-size: 14px;
-}
-
-/* 汇总指标卡 */
-.status-summary {
-  display: flex;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 12px 24px;
-  align-items: center;
-}
-
-.summary-item {
-  text-align: center;
-}
-
-.summary-item .val {
-  font-size: 24px;
-  font-weight: 800;
-  line-height: 1.2;
-}
-
-.summary-item .lbl {
-  font-size: 11px;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-}
-
-.summary-divider {
-  width: 1px;
-  height: 24px;
-  background: var(--border-color);
-  margin: 0 20px;
-}
-
-/* 表单与卡片 */
-.col-span-1 { grid-column: span 1; }
-.col-span-2 { grid-column: span 1; }
-
-@media (min-width: 992px) {
-  .col-span-2 { grid-column: span 2; }
-}
-
-.panel-title {
-  font-size: 18px;
-  font-weight: 700;
-  margin-bottom: 6px;
-}
-
-.panel-subtitle {
-  color: var(--text-secondary);
-  font-size: 13px;
-  margin-bottom: 24px;
-}
-
-.form-container {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.form-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-.select-wrapper {
-  position: relative;
-}
-
-.select-field {
-  appearance: none;
-  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b9bb4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
-  background-repeat: no-repeat;
-  background-position: right 16px center;
-  background-size: 16px;
-  padding-right: 40px;
-}
-
-.w-full { width: 100%; }
-
-.tech-card {
-  margin-top: 24px;
-  background: rgba(88, 101, 242, 0.05);
-  border: 1px dashed rgba(88, 101, 242, 0.2);
-  border-radius: 12px;
-  padding: 16px;
-}
-
-.tech-card h4 {
-  font-size: 13px;
-  color: #a5b4fc;
-  margin-bottom: 8px;
-}
-
-.tech-card ul {
-  padding-left: 16px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-/* 列表区域 */
-.list-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.btn-icon {
-  padding: 8px 12px;
-}
-
-.refresh-icon {
-  font-size: 12px;
-  transition: transform 0.5s ease;
-}
-
-.spinning {
-  animation: rotate 1s linear infinite;
-}
-
-@keyframes rotate {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 80px 40px;
-  text-align: center;
-}
-
-.empty-emoji {
-  font-size: 64px;
-  margin-bottom: 20px;
-  opacity: 0.7;
-}
-
-.empty-state h3 {
-  font-size: 20px;
-  margin-bottom: 8px;
-}
-
-.empty-state p {
-  color: var(--text-secondary);
-  font-size: 14px;
-  max-width: 400px;
-}
-
-/* 出口网格与卡片 */
-.egress-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 20px;
-}
-
-@media (min-width: 768px) {
-  .egress-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-.egress-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  border-left-width: 4px;
-}
-
-.status-border-running { border-left-color: var(--success-color); }
-.status-border-starting { border-left-color: var(--warning-color); }
-.status-border-rebuilding { border-left-color: var(--warning-color); }
-.status-border-error { border-left-color: var(--danger-color); }
-.status-border-offline { border-left-color: var(--text-secondary); }
-
-.card-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 16px;
-}
-
-.card-title-group {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.card-flag {
-  font-size: 28px;
-  background: rgba(255,255,255,0.05);
-  padding: 4px;
-  border-radius: 8px;
-}
-
-.card-name {
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.card-region-tag {
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-.badge-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.badge-success .badge-dot {
-  box-shadow: 0 0 8px var(--success-color);
-  animation: pulse-glow 1.5s infinite alternate;
-}
-
-@keyframes pulse-glow {
-  from { opacity: 0.5; }
-  to { opacity: 1; }
-}
-
-.card-info {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 20px;
-}
-
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-}
-
-.info-label {
-  color: var(--text-secondary);
-}
-
-.info-value {
-  color: var(--text-primary);
-  max-width: 160px;
-}
-
-.truncate {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.text-glow {
-  color: #a5b4fc;
-  font-weight: 600;
-}
-
-.font-mono {
-  font-family: monospace;
-}
-
-.card-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.flex-1 { flex: 1; }
-
-/* 底部监控表格 */
-.nodes-section {
-  margin-top: 40px;
-}
-
-.section-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-
-.section-head h3 {
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.section-head p {
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-.table-container {
-  overflow-x: auto;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-}
-
-.nodes-table {
-  width: 100%;
-  border-collapse: collapse;
-  text-align: left;
-  font-size: 13px;
-}
-
-.nodes-table th, .nodes-table td {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.nodes-table th {
-  background: rgba(255, 255, 255, 0.02);
-  color: var(--text-secondary);
-  font-weight: 600;
-}
-
-.nodes-table tr:last-child td {
-  border-bottom: none;
-}
-
-.nodes-table tr:hover td {
-  background: rgba(255, 255, 255, 0.01);
-}
-
-.table-flag {
-  font-size: 16px;
-  margin-right: 6px;
-}
-
-.font-bold { font-weight: 700; }
-
-/* 旋转加载动画 */
-.spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid rgba(255,255,255,0.3);
-  border-radius: 50%;
-  border-top-color: white;
-  animation: spin 1s linear infinite;
-  display: inline-block;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+.toast{position:fixed;top:16px;right:16px;z-index:9999;display:flex;align-items:center;gap:10px;padding:12px 20px;border-radius:10px;backdrop-filter:blur(16px);font-weight:500;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast-success{background:rgba(0,230,118,.15);border:1px solid rgba(0,230,118,.3);color:var(--success-color)}
+.toast-error{background:rgba(255,23,68,.15);border:1px solid rgba(255,23,68,.3);color:#ff5252}
+.toast-enter-active,.toast-leave-active{transition:all .3s}
+.toast-enter-from,.toast-leave-to{opacity:0;transform:translateY(-12px)}
+
+.modal-bg{position:fixed;inset:0;z-index:900;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.6);backdrop-filter:blur(6px)}
+.modal{width:min(560px,100%);max-height:85vh;overflow-y:auto;display:flex;flex-direction:column;gap:16px}
+.modal-wide{width:min(860px,100%)}
+.modal-head{display:flex;justify-content:space-between;align-items:flex-start}
+.modal-head h3{font-size:17px;font-weight:700}
+.modal-loading{padding:24px 0;text-align:center;color:var(--text-secondary)}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px}
+.fade-enter-active,.fade-leave-active{transition:opacity .25s}
+.fade-enter-from,.fade-leave-to{opacity:0}
+
+.link-breakdown{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:rgba(0,0,0,.15);border-radius:8px;padding:12px}
+.kv{display:flex;flex-direction:column;gap:2px}
+.kv-k{font-size:10px;text-transform:uppercase;color:var(--text-secondary);letter-spacing:.5px}
+.kv-v{font-size:13px;word-break:break-all}
+.link-box{background:rgba(0,0,0,.25);border:1px solid var(--border-color);border-radius:8px;padding:12px;font-size:12px;word-break:break-all;line-height:1.6;font-family:monospace;color:#a5b4fc}
+
+.sub-actions{display:flex;gap:8px;flex-wrap:wrap}
+.sub-links{display:flex;flex-direction:column;gap:4px;max-height:45vh;overflow-y:auto}
+.sub-link-row{background:rgba(0,0,0,.15);border:1px solid var(--border-color);border-radius:6px;padding:8px 12px;font-size:11px;cursor:pointer;transition:border-color .2s;word-break:break-all;font-family:monospace;color:#a5b4fc}
+.sub-link-row:hover{border-color:var(--accent-color)}
+
+.log-output{min-height:200px;max-height:55vh;overflow:auto;white-space:pre-wrap;word-break:break-word;background:rgba(0,0,0,.3);border:1px solid var(--border-color);border-radius:8px;padding:14px;font-size:12px;line-height:1.5;color:#d7e2f0}
+
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px;flex-wrap:wrap;gap:16px}
+.header h1{font-size:24px;font-weight:800;background:linear-gradient(135deg,#fff 0%,#a5b4fc 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.header-stats{display:flex;gap:16px}
+.stat{display:flex;flex-direction:column;align-items:center;min-width:48px}
+.stat-val{font-size:22px;font-weight:800;line-height:1.2}
+.stat-lbl{font-size:10px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px}
+
+.main-grid{display:grid;grid-template-columns:1fr;gap:20px}
+@media(min-width:992px){.main-grid{grid-template-columns:320px 1fr}}
+
+.panel h2{font-size:16px;font-weight:700;margin-bottom:4px}
+.form{display:flex;flex-direction:column;gap:10px}
+.label{font-size:12px;font-weight:600;color:var(--text-secondary)}
+.input{background:rgba(0,0,0,.2);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);font-family:inherit;font-size:14px;padding:10px 14px;width:100%;outline:none;transition:border-color .2s,box-shadow .2s}
+.input:focus{border-color:var(--accent-color);box-shadow:0 0 0 2px var(--accent-glow)}
+.input-sm{font-size:12px;padding:6px 10px}
+.w-full{width:100%}
+.mb-16{margin-bottom:16px}
+
+.divider{height:1px;background:var(--border-color);margin:20px 0}
+
+.batch-btns{display:flex;flex-direction:column;gap:8px}
+
+.hint-box{margin-top:16px;background:rgba(88,101,242,.05);border:1px dashed rgba(88,101,242,.2);border-radius:8px;padding:12px;font-size:12px;color:var(--text-secondary);line-height:1.6}
+
+.list-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.list-head h2{font-size:17px;font-weight:700}
+.empty{text-align:center;padding:48px;color:var(--text-secondary)}
+
+.egress-grid{display:grid;grid-template-columns:1fr;gap:16px}
+@media(min-width:768px){.egress-grid{grid-template-columns:1fr 1fr}}
+
+.eg-card{display:flex;flex-direction:column;gap:14px;border-left:4px solid var(--border-color)}
+.border-success{border-left-color:var(--success-color)}
+.border-warning{border-left-color:var(--warning-color)}
+.border-danger{border-left-color:var(--danger-color)}
+.border-muted{border-left-color:var(--text-secondary)}
+
+.eg-top{display:flex;justify-content:space-between;align-items:center}
+.eg-identity{display:flex;align-items:center;gap:10px}
+.eg-flag{font-size:24px}
+.eg-name{font-size:15px;font-weight:700}
+
+.eg-conn{background:rgba(0,0,0,.15);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.conn-row{display:flex;justify-content:space-between;align-items:center;font-size:12px}
+.conn-label{color:var(--text-secondary)}
+.conn-val{font-weight:500}
+.eg-error{background:rgba(255,23,68,.08);border:1px solid rgba(255,23,68,.2);border-radius:6px;padding:6px 10px;font-size:12px;color:#ff5252}
+
+.eg-actions{display:flex;gap:6px;flex-wrap:wrap}
+.flex1{flex:1;min-width:0}
+.ico{min-width:42px;font-size:11px;font-weight:700}
+
+.text-secondary{color:var(--text-secondary)}
+.text-success{color:var(--success-color)}
+.text-danger{color:#ff5252}
+.mono{font-family:monospace}
+
+.btn{background:rgba(255,255,255,.05);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-family:inherit;font-weight:500;font-size:13px;padding:8px 16px;gap:6px;transition:all .2s;outline:none}
+.btn:hover{background:rgba(255,255,255,.1)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-sm{font-size:12px;padding:6px 12px}
+.btn-primary{background:var(--accent-color);border-color:transparent}
+.btn-primary:hover{background:#4752c4}
+.btn-success{background:rgba(0,230,118,.1);border-color:rgba(0,230,118,.3);color:var(--success-color)}
+.btn-success:hover{background:var(--success-color);color:#0a0c10}
+.btn-danger{background:rgba(255,23,68,.1);border-color:rgba(255,23,68,.3);color:#ff5252}
+.btn-danger:hover{background:#ff1744;color:white}
+
+.pill{display:inline-flex;align-items:center;font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px}
+.pill-success{background:rgba(0,230,118,.1);color:var(--success-color);border:1px solid rgba(0,230,118,.2)}
+.pill-warning{background:rgba(255,145,0,.1);color:var(--warning-color);border:1px solid rgba(255,145,0,.2)}
+.pill-danger{background:rgba(255,23,68,.1);color:#ff5252;border:1px solid rgba(255,23,68,.2)}
+.pill-muted{background:rgba(139,155,180,.1);color:var(--text-secondary);border:1px solid rgba(139,155,180,.2)}
+.pill-sm{font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600}
+.pill-sm.pill-success{background:rgba(0,230,118,.1);color:var(--success-color)}
+.pill-sm.pill-warning{background:rgba(255,145,0,.1);color:var(--warning-color)}
+.pill-sm.pill-danger{background:rgba(255,23,68,.1);color:#ff5252}
+
+.spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-radius:50%;border-top-color:white;animation:spin 1s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.glass-panel{background:var(--glass-bg);backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);border:1px solid var(--border-color);border-radius:12px;padding:20px;box-shadow:0 8px 32px rgba(0,0,0,.3)}
+.container{max-width:1200px;margin:0 auto;padding:24px 16px}
+@media(min-width:768px){.container{padding:32px 24px}}
 </style>

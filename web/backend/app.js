@@ -8,9 +8,6 @@ const fs = require('fs');
 
 const egressRouter = require('./routes/egress');
 const vpngateRouter = require('./routes/vpngate');
-const db = require('./models/db');
-const dockerService = require('./services/docker');
-const vpngateFetcher = require('./services/vpngate-fetcher');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -42,94 +39,7 @@ if (fs.existsSync(FRONTEND_DIST)) {
   });
 }
 
-// 4. 后台自动健康检查与透明漂移守护任务 (Self-Healing Daemon)
-// 每 60 秒轮询检测所有出口的运行状况
-const HEALTH_CHECK_INTERVAL = 60000;
-// 判定失效的最大容忍次数，连续 2 次失败则触发自动漂移
-const MAX_FAILURES = 2;
-// 内存中记录每个出口的连续失败次数
-const failureTracker = {};
-
-function startSelfHealingDaemon() {
-  console.log('[*] 自动漂移自愈守护进程已启动...');
-  
-  setInterval(async () => {
-    const egresses = db.getEgresses();
-    
-    for (const egress of egresses) {
-      const name = egress.name;
-      
-      // 如果出口正在启动或人工漂移中，则跳过，避免重复重建
-      if (egress.status === 'starting' || egress.status === 'rebuilding') {
-        continue;
-      }
-
-      try {
-        const statusReport = await dockerService.getContainerStatusAndIp(name);
-        
-        if (statusReport.status !== 'running' || statusReport.ip === 'error') {
-          // 累加失败计数
-          failureTracker[name] = (failureTracker[name] || 0) + 1;
-          db.updateEgress(name, {
-            failureCount: failureTracker[name],
-            error: statusReport.error || '连通性断开',
-            lastCheckTime: Date.now(),
-            updatedAt: Date.now()
-          });
-          console.warn(`[!] 出口 ${name} 检测异常 (${failureTracker[name]}/${MAX_FAILURES})，错误原因: ${statusReport.error || '连通性断开'}`);
-
-          // 当连续失败次数达到最大容忍限制，触发自动漂移
-          if (failureTracker[name] >= MAX_FAILURES) {
-            console.error(`[!] 触发自愈！出口 ${name} 已连续 ${MAX_FAILURES} 次健康检查失败，正在执行自动透明漂移...`);
-            
-            // 重置计数，避免重复触发
-            failureTracker[name] = 0;
-            db.updateEgress(name, { status: 'rebuilding', failureCount: 0, error: '', updatedAt: Date.now() });
-
-            // 开始漂移逻辑：拉取新节点 -> 更新 ovpn -> 重启容器
-            try {
-              const bestNode = await vpngateFetcher.getBestNode(egress.region);
-              
-              const egressDir = path.join(__dirname, 'data', 'egress', name);
-              if (!fs.existsSync(egressDir)) {
-                fs.mkdirSync(egressDir, { recursive: true });
-              }
-              fs.writeFileSync(path.join(egressDir, 'client.ovpn'), bestNode.ovpnConfig, 'utf-8');
-              
-              db.updateEgress(name, {
-                nodeIp: bestNode.ip,
-                nodeHostname: bestNode.hostname,
-                latency: bestNode.ping,
-                updatedAt: Date.now()
-              });
-
-              // 启动新容器
-              const updatedEgress = db.getEgress(name) || egress;
-              const containerId = await dockerService.startEgressContainer(updatedEgress);
-              db.updateEgress(name, { containerId, status: 'running', error: '', failureCount: 0, updatedAt: Date.now() });
-              console.log(`[+] [自愈成功] 出口 ${name} 已成功漂移至新节点 IP: ${bestNode.ip}`);
-            } catch (driftErr) {
-              db.updateEgress(name, { status: 'error', error: `自愈失败: ${driftErr.message}`, updatedAt: Date.now() });
-              console.error(`[-] [自愈失败] 出口 ${name} 透明漂移出错:`, driftErr.message);
-            }
-          }
-        } else {
-          // 检测通过，重置失败计数
-          if (failureTracker[name] > 0) {
-            console.log(`[+] 出口 ${name} 网络已恢复，重置计数`);
-          }
-          failureTracker[name] = 0;
-          db.updateEgress(name, { failureCount: 0, error: '', lastCheckTime: Date.now(), updatedAt: Date.now() });
-        }
-      } catch (err) {
-        console.error(`[-] 定时检测出口 ${name} 时发生系统错误:`, err.message);
-      }
-    }
-  }, HEALTH_CHECK_INTERVAL);
-}
-
-// 5. 启动服务并开启守护进程
+// 4. 启动服务
 app.listen(PORT, () => {
   console.log(`[+] 控制面板后端服务已在端口 ${PORT} 启动！`);
-  startSelfHealingDaemon();
 });
