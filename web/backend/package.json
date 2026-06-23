@@ -1,0 +1,21 @@
+{
+  "name": "vless-reality-panel-backend",
+  "version": "1.0.0",
+  "description": "VLESS Reality + VPNGate 多出口管理面板后端",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "cors": "^2.8.5",
+    "dockerode": "^4.0.2",
+    "express": "^4.19.2",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  },
+  "private": true
+}

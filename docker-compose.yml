@@ -1,0 +1,39 @@
+services:
+  web-panel:
+    build:
+      context: ./web/backend
+      dockerfile: Dockerfile
+    container_name: vless-web-panel
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - TZ=Asia/Shanghai
+      - RE_DOMAINS=www.asus.com
+      # 实际实体机的数据目录的绝对路径，供 docker.js 在 docker.sock 模式下创建出口容器的卷绑定
+      # 使用 PWD 的语法让其自动加载为执行 docker compose 时的工作目录
+      - HOST_DATA_PATH=${PWD}/data
+    ports:
+      - "3000:3000"
+      # 出口容器的端口范围预留（需在防火墙中放行）
+      - "44301-44400:44301-44400"
+    volumes:
+      # 挂载 Docker socket 使得后端可以通过 Docker API 管理出口容器
+      - /var/run/docker.sock:/var/run/docker.sock
+      # 挂载宿主机上的数据目录，用于持久化数据库和出口配置文件
+      - ./data:/app/data
+      # 挂载 Xray 配置模板
+      - ./config:/app/config
+    # 限制日志文件大小，避免磁盘被打满
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - vless-net
+
+networks:
+  vless-net:
+    name: vless-net
+    driver: bridge

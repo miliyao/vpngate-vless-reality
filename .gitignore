@@ -1,0 +1,22 @@
+# 依赖库
+node_modules/
+web/frontend/node_modules/
+
+# 运行时数据与证书数据库
+data/
+*.db
+*.sqlite
+
+# 日志文件
+*.log
+logs/
+
+# 环境变量及敏感信息
+.env
+.env.*.local
+
+# IDE与系统缓存
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

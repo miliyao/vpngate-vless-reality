@@ -1,0 +1,222 @@
+/* 全局精美暗黑科技风格 UI 样式 */
+/* 使用 Vanilla CSS 纯手工打造，确保极致细节与平滑动画 */
+
+:root {
+  --bg-primary: #0a0c10;
+  --bg-secondary: #121620;
+  --accent-color: #5865f2;
+  --accent-glow: rgba(88, 101, 242, 0.4);
+  --success-color: #00e676;
+  --success-glow: rgba(0, 230, 118, 0.3);
+  --warning-color: #ff9100;
+  --danger-color: #ff1744;
+  --text-primary: #f0f4f9;
+  --text-secondary: #8b9bb4;
+  --border-color: rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(20, 25, 40, 0.6);
+  --glass-blur: blur(12px);
+  --transition-smooth: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-primary);
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(88, 101, 242, 0.1) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(0, 230, 118, 0.05) 0px, transparent 50%);
+  color: var(--text-primary);
+  font-family: 'Outfit', 'Noto Sans SC', sans-serif;
+  min-height: 100vh;
+  line-height: 1.6;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 滚动条美化 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+/* 精美玻璃质感卡片基类 */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+  transition: var(--transition-smooth);
+}
+
+.glass-panel:hover {
+  border-color: rgba(88, 101, 242, 0.2);
+  box-shadow: 0 12px 40px 0 rgba(88, 101, 242, 0.1);
+}
+
+/* 按钮基础及变体样式 */
+.btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-weight: 500;
+  font-size: 14px;
+  padding: 10px 20px;
+  gap: 8px;
+  transition: var(--transition-smooth);
+  outline: none;
+}
+
+.btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn-primary {
+  background: var(--accent-color);
+  border-color: transparent;
+  box-shadow: 0 4px 14px 0 var(--accent-glow);
+}
+
+.btn-primary:hover {
+  background: #4752c4;
+  box-shadow: 0 6px 20px 0 var(--accent-glow);
+}
+
+.btn-danger {
+  background: rgba(255, 23, 68, 0.1);
+  border-color: rgba(255, 23, 68, 0.3);
+  color: #ff5252;
+}
+
+.btn-danger:hover {
+  background: var(--danger-color);
+  border-color: transparent;
+  color: white;
+  box-shadow: 0 6px 16px 0 rgba(255, 23, 68, 0.3);
+}
+
+.btn-success {
+  background: rgba(0, 230, 118, 0.1);
+  border-color: rgba(0, 230, 118, 0.3);
+  color: var(--success-color);
+}
+
+.btn-success:hover {
+  background: var(--success-color);
+  border-color: transparent;
+  color: var(--bg-primary);
+  font-weight: 600;
+  box-shadow: 0 6px 16px 0 var(--success-glow);
+}
+
+/* 输入框样式 */
+.input-field {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 10px 16px;
+  width: 100%;
+  outline: none;
+  transition: var(--transition-smooth);
+}
+
+.input-field:focus {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+/* 状态标签样式 */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  gap: 4px;
+}
+
+.badge-success {
+  background: rgba(0, 230, 118, 0.1);
+  color: var(--success-color);
+  border: 1px solid rgba(0, 230, 118, 0.2);
+}
+
+.badge-starting {
+  background: rgba(255, 145, 0, 0.1);
+  color: var(--warning-color);
+  border: 1px solid rgba(255, 145, 0, 0.2);
+}
+
+.badge-error {
+  background: rgba(255, 23, 68, 0.1);
+  color: #ff5252;
+  border: 1px solid rgba(255, 23, 68, 0.2);
+}
+
+.badge-offline {
+  background: rgba(139, 155, 180, 0.1);
+  color: var(--text-secondary);
+  border: 1px solid rgba(139, 155, 180, 0.2);
+}
+
+/* 一些实用排版类 */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 20px;
+}
+
+.grid-cols-2 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+}
+
+@media (min-width: 768px) {
+  .grid-cols-2 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.grid-cols-3 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+@media (min-width: 992px) {
+  .grid-cols-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
