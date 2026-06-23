@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.9.0-rc.2 - 2026-06-23
+
+- Added `/healthz` and authenticated `/api/system/status` operational endpoints.
+- Added Docker Compose health checks for the web panel and worker.
+- Added backup and restore scripts for `.env` and persistent data.
+- Updated backend dependencies to clear production npm audit findings.
+
 ## v0.9.0-rc.1 - 2026-06-23
 
 - Added SQLite persistence and job history for egress operations.

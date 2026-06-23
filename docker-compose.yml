@@ -19,6 +19,12 @@ services:
       - HOST_DATA_PATH=${HOST_DATA_PATH:-${PWD}/data}
     ports:
       - "${PANEL_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/healthz >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     volumes:
       # 挂载 Docker socket 使得后端可以通过 Docker API 管理出口容器
       - /var/run/docker.sock:/var/run/docker.sock
@@ -47,6 +53,12 @@ services:
       - RE_DOMAINS=${RE_DOMAINS:-www.amd.com}
       - HOST_DATA_PATH=${HOST_DATA_PATH:-${PWD}/data}
     command: ["npm", "run", "start:worker"]
+    healthcheck:
+      test: ["CMD-SHELL", "tr '\\0' ' ' </proc/1/cmdline | grep -q 'start:worker' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/app/data

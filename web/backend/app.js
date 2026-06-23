@@ -8,6 +8,8 @@ const fs = require('fs');
 
 const egressRouter = require('./routes/egress');
 const vpngateRouter = require('./routes/vpngate');
+const db = require('./models/db');
+const packageJson = require('./package.json');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -47,9 +49,37 @@ function requirePanelAuth(req, res, next) {
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.get('/healthz', (req, res) => {
+  res.json({
+    ok: true,
+    service: 'vless-reality-panel',
+    version: packageJson.version,
+    uptime: Math.round(process.uptime()),
+    timestamp: Date.now()
+  });
+});
+
 app.use(requirePanelAuth);
 
 // 2. 路由分发
+app.get('/api/system/status', (req, res) => {
+  try {
+    res.json({
+      ok: true,
+      version: packageJson.version,
+      authEnabled: AUTH_ENABLED,
+      egressCount: db.countEgress(),
+      jobStatusCounts: db.jobStatusCounts(),
+      latestJob: db.latestJob(),
+      uptime: Math.round(process.uptime()),
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 app.use('/api/egress', egressRouter);
 app.use('/api/vpngate', vpngateRouter);
 

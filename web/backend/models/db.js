@@ -156,6 +156,9 @@ const stmt = {
   updateJob: db.prepare(`UPDATE jobs SET status=@status, result=@result, error=@error, updatedAt=@updatedAt, startedAt=@startedAt, finishedAt=@finishedAt WHERE id=@id`),
   getJob: db.prepare('SELECT * FROM jobs WHERE id = ? LIMIT 1'),
   listJobs: db.prepare('SELECT * FROM jobs ORDER BY id DESC LIMIT ?')
+  ,
+  jobStatusCounts: db.prepare('SELECT status, COUNT(1) AS count FROM jobs GROUP BY status'),
+  latestJob: db.prepare('SELECT * FROM jobs ORDER BY id DESC LIMIT 1')
 };
 
 function normalizeEgress(egress) {
@@ -203,6 +206,23 @@ module.exports = {
 
   countEgress() {
     return stmt.countEgress.get().c;
+  },
+
+  jobStatusCounts() {
+    return stmt.jobStatusCounts.all().reduce((acc, row) => {
+      acc[row.status] = Number(row.count);
+      return acc;
+    }, {});
+  },
+
+  latestJob() {
+    const job = stmt.latestJob.get();
+    if (!job) return null;
+    return {
+      ...job,
+      payload: safeJsonParse(job.payload),
+      result: safeJsonParse(job.result)
+    };
   },
 
   createJob({ type, target = '', payload = {} }) {

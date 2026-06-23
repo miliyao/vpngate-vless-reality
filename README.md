@@ -19,6 +19,9 @@ VPNGate 的公共节点具有不确定性，经常会失效。本系统后台运
 ### 3. 管理任务队列
 面板上的创建、删除、漂移和批量操作会先写入 SQLite 任务队列，再由独立 Worker 执行。这样 Web API 不会因为长任务阻塞，刷新页面后也能查看最近任务状态与错误详情。
 
+### 4. 健康检查与状态接口
+Web 面板提供公开的 `/healthz` 存活检查，Docker Compose 会自动用它判断面板健康状态。登录后可访问 `/api/system/status` 查看版本、出口数量、任务状态统计和最近任务。
+
 ---
 
 ## 📂 项目结构
@@ -46,6 +49,9 @@ vpngate-vless-reality/
 ├── config/
 │   └── xray-config.template.json   # Xray 服务端 Reality 配置模板
 ├── docker-compose.yml              # Web 面板与 Worker 编排文件
+├── scripts/
+│   ├── backup.sh                   # 备份 data 与 .env
+│   └── restore.sh                  # 从备份恢复 data 与 .env
 ├── .env.example                    # 生产环境配置示例
 ├── CHANGELOG.md                    # 版本变更记录
 └── README.md                       # 说明文档
@@ -145,6 +151,12 @@ docker compose up -d
 # 查看服务状态
 docker compose ps
 
+# 健康检查
+curl http://127.0.0.1:3000/healthz
+
+# 登录后查看详细状态
+curl -u admin:你的密码 http://127.0.0.1:3000/api/system/status
+
 # 查看面板日志
 docker logs -f vless-web-panel
 
@@ -155,5 +167,8 @@ docker logs -f vless-self-healing-worker
 docker compose up -d
 
 # 备份数据
-tar -czf vless-reality-backup-$(date +%F).tar.gz data .env
+./scripts/backup.sh
+
+# 从备份恢复
+./scripts/restore.sh ./backups/vless-reality-backup-YYYYmmdd-HHMMSS.tar.gz
 ```

@@ -10,6 +10,8 @@ data/
 # 日志文件
 *.log
 logs/
+backups/
+*.tar.gz
 
 # 环境变量及敏感信息
 .env
