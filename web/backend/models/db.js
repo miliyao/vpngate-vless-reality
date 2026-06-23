@@ -90,7 +90,7 @@ module.exports = {
     const db = readDb();
     const index = db.egresses.findIndex(e => e.name === name);
     if (index !== -1) {
-      db.egresses[index] = { ...db.egresses[index], ...updates };
+      db.egresses[index] = { ...db.egresses[index], ...updates, updatedAt: updates.updatedAt || Date.now() };
       writeDb(db);
       return db.egresses[index];
     }

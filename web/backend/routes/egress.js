@@ -4,7 +4,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
+const { v4: uuidv4, validate: validateUuid } = require('uuid');
 
 const db = require('../models/db');
 const dockerService = require('../services/docker');
@@ -20,20 +20,26 @@ const DEST_DOMAIN = `${SERVER_NAME}:443`;
 
 // 起步暴露端口
 const START_PORT = 44301;
+const END_PORT = 44400;
+const EGRESS_NAME_RE = /^[a-zA-Z0-9_-]+$/;
+
+function validateEgressName(name) {
+  return typeof name === 'string' && EGRESS_NAME_RE.test(name);
+}
 
 /**
  * 助手函数：为新出口分配可用端口
- * 为避免端口复用冲突，始终使用当前最大端口 + 1 的策略
- * 即使中间端口被删除也不会回收复用，确保永不冲突
+ * 从 docker-compose 暴露的固定端口池中分配未使用端口
  */
 function allocatePort() {
   const egresses = db.getEgresses();
-  if (egresses.length === 0) {
-    return START_PORT;
+  const usedPorts = new Set(egresses.map(e => Number(e.port)).filter(Boolean));
+  for (let port = START_PORT; port <= END_PORT; port++) {
+    if (!usedPorts.has(port)) {
+      return port;
+    }
   }
-  // 取当前已分配最大端口号 + 1，而非简单计数，避免删除中间出口后端口复用冲突
-  const maxPort = Math.max(...egresses.map(e => e.port));
-  return maxPort + 1;
+  throw new Error(`可用端口已耗尽，请扩展 ${START_PORT}-${END_PORT} 端口映射范围`);
 }
 
 /**
@@ -44,11 +50,14 @@ router.post('/create', async (req, res) => {
   try {
     const { name, region, uuid } = req.body;
 
-    if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
+    if (!validateEgressName(name)) {
       return res.status(400).json({ error: '出口名称无效，仅允许字母、数字、下划线和连字符' });
     }
     if (!region || region.length !== 2) {
       return res.status(400).json({ error: '国家/地区代码无效，必须为两位字母（如 JP, US）' });
+    }
+    if (uuid && !validateUuid(uuid)) {
+      return res.status(400).json({ error: '自定义 UUID 格式无效' });
     }
 
     // 1. 获取 VPNGate 最优节点
@@ -95,8 +104,14 @@ router.post('/create', async (req, res) => {
       nodeIp: node.ip,
       nodeHostname: node.hostname,
       status: 'starting',
+      error: '',
+      currentEgressIp: '',
+      containerId: '',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
       lastCheckTime: Date.now(),
-      latency: node.ping
+      latency: node.ping,
+      failureCount: 0
     };
 
     db.addEgress(newEgress);
@@ -104,11 +119,11 @@ router.post('/create', async (req, res) => {
     // 7. 异步在 Docker 中启动容器，避免接口挂起超时
     dockerService.startEgressContainer(newEgress)
       .then(containerId => {
-        db.updateEgress(name, { containerId, status: 'running' });
+        db.updateEgress(name, { containerId, status: 'running', error: '', updatedAt: Date.now() });
         console.log(`[+] 出口 ${name} 启动流程全部就绪`);
       })
       .catch(err => {
-        db.updateEgress(name, { status: 'error', error: err.message });
+        db.updateEgress(name, { status: 'error', error: err.message, updatedAt: Date.now() });
         console.error(`[-] 出口 ${name} 容器启动失败:`, err.message);
       });
 
@@ -138,8 +153,13 @@ router.get('/list', async (req, res) => {
       const dockerStatus = await dockerService.getContainerStatusAndIp(egress.name);
       
       // 更新数据库
+      const shouldKeepTransientStatus = ['starting', 'rebuilding'].includes(egress.status)
+        && dockerStatus.status === 'offline';
+      const resolvedStatus = dockerStatus.ip === 'error' ? 'error' : dockerStatus.status;
+
       const updates = {
-        status: dockerStatus.status,
+        status: shouldKeepTransientStatus ? egress.status : resolvedStatus,
+        error: dockerStatus.error || '',
         lastCheckTime: Date.now()
       };
       if (dockerStatus.ip && dockerStatus.ip !== 'offline' && dockerStatus.ip !== 'error') {
@@ -164,8 +184,13 @@ router.get('/list', async (req, res) => {
 router.post('/delete', async (req, res) => {
   try {
     const { name } = req.body;
-    if (!name) {
-      return res.status(400).json({ error: '缺少出口名称' });
+    if (!validateEgressName(name)) {
+      return res.status(400).json({ error: '出口名称无效' });
+    }
+
+    const egress = db.getEgress(name);
+    if (!egress) {
+      return res.status(404).json({ error: '出口未找到' });
     }
 
     console.log(`[*] 正在删除出口 ${name}...`);
@@ -174,7 +199,11 @@ router.post('/delete', async (req, res) => {
     await dockerService.stopAndRemoveContainer(name);
 
     // 2. 清理磁盘物理文件
-    const egressDir = path.join(__dirname, '..', 'data', 'egress', name);
+    const egressBaseDir = path.resolve(__dirname, '..', 'data', 'egress');
+    const egressDir = path.resolve(egressBaseDir, name);
+    if (!egressDir.startsWith(egressBaseDir + path.sep)) {
+      return res.status(400).json({ error: '出口目录无效' });
+    }
     if (fs.existsSync(egressDir)) {
       fs.rmSync(egressDir, { recursive: true, force: true });
     }
@@ -196,6 +225,9 @@ router.post('/delete', async (req, res) => {
 router.post('/rebuild', async (req, res) => {
   try {
     const { name } = req.body;
+    if (!validateEgressName(name)) {
+      return res.status(400).json({ error: '出口名称无效' });
+    }
     const egress = db.getEgress(name);
 
     if (!egress) {
@@ -203,7 +235,7 @@ router.post('/rebuild', async (req, res) => {
     }
 
     console.log(`[*] 正在为出口 ${name} 执行一键漂移自愈...`);
-    db.updateEgress(name, { status: 'starting' });
+    db.updateEgress(name, { status: 'rebuilding', error: '', updatedAt: Date.now() });
 
     // 1. 重新拉取对应地区最优节点
     const node = await vpngateFetcher.getBestNode(egress.region);
@@ -219,18 +251,19 @@ router.post('/rebuild', async (req, res) => {
     db.updateEgress(name, {
       nodeIp: node.ip,
       nodeHostname: node.hostname,
-      latency: node.ping
+      latency: node.ping,
+      updatedAt: Date.now()
     });
 
     // 4. 重启 Docker 容器（传入最新的 egress 对象，而非漂移前的旧数据）
     const updatedEgress = db.getEgress(name);
     dockerService.startEgressContainer(updatedEgress)
       .then(containerId => {
-        db.updateEgress(name, { containerId, status: 'running' });
+        db.updateEgress(name, { containerId, status: 'running', error: '', failureCount: 0, updatedAt: Date.now() });
         console.log(`[+] 出口 ${name} 漂移自愈已完成`);
       })
       .catch(err => {
-        db.updateEgress(name, { status: 'error', error: err.message });
+        db.updateEgress(name, { status: 'error', error: err.message, updatedAt: Date.now() });
         console.error(`[-] 出口 ${name} 漂移重建失败:`, err.message);
       });
 
@@ -247,6 +280,9 @@ router.post('/rebuild', async (req, res) => {
  */
 router.get('/:name/link', (req, res) => {
   try {
+    if (!validateEgressName(req.params.name)) {
+      return res.status(400).json({ error: '出口名称无效' });
+    }
     const egress = db.getEgress(req.params.name);
     if (!egress) {
       return res.status(404).json({ error: '出口未找到' });
@@ -264,6 +300,29 @@ router.get('/:name/link', (req, res) => {
     const link = `vless://${egress.uuid}@${vpsHost}:${egress.port}?type=tcp&security=reality&flow=xtls-rprx-vision&pbk=${egress.publicKey}&sid=${egress.shortId}&sni=${SERVER_NAME}#${egress.name}`;
 
     res.json({ link });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/egress/:name/logs
+ * 获取特定出口容器最近日志
+ */
+router.get('/:name/logs', async (req, res) => {
+  try {
+    if (!validateEgressName(req.params.name)) {
+      return res.status(400).json({ error: '出口名称无效' });
+    }
+
+    const egress = db.getEgress(req.params.name);
+    if (!egress) {
+      return res.status(404).json({ error: '出口未找到' });
+    }
+
+    const tail = Math.min(Math.max(parseInt(req.query.tail, 10) || 120, 20), 500);
+    const logs = await dockerService.getContainerLogs(req.params.name, tail);
+    res.json({ logs });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

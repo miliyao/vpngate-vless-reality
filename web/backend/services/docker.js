@@ -210,8 +210,48 @@ async function getContainerStatusAndIp(name) {
   }
 }
 
+/**
+ * 获取出口容器最近日志，便于面板诊断 OpenVPN / Xray 启动失败原因
+ * @param {string} name - 出口名称
+ * @param {number} tail - 返回最近多少行日志
+ */
+async function getContainerLogs(name, tail = 120) {
+  const containerName = `egress-${name}`;
+  try {
+    const container = docker.getContainer(containerName);
+    await container.inspect();
+
+    const logBuffer = await container.logs({
+      stdout: true,
+      stderr: true,
+      timestamps: true,
+      tail
+    });
+
+    // docker logs 在非 TTY 容器下会带 8 字节 stream header，这里做一次轻量清理。
+    let offset = 0;
+    const chunks = [];
+    while (offset + 8 <= logBuffer.length) {
+      const frameSize = logBuffer.readUInt32BE(offset + 4);
+      const frameStart = offset + 8;
+      const frameEnd = frameStart + frameSize;
+      if (frameEnd > logBuffer.length) break;
+      chunks.push(logBuffer.subarray(frameStart, frameEnd));
+      offset = frameEnd;
+    }
+
+    if (chunks.length > 0) {
+      return Buffer.concat(chunks).toString('utf-8');
+    }
+    return logBuffer.toString('utf-8');
+  } catch (error) {
+    throw new Error(`读取容器日志失败: ${error.message}`);
+  }
+}
+
 module.exports = {
   startEgressContainer,
   stopAndRemoveContainer,
-  getContainerStatusAndIp
+  getContainerStatusAndIp,
+  getContainerLogs
 };

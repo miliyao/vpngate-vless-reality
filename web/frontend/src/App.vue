@@ -27,6 +27,11 @@ const toastMessage = ref('');
 const toastType = ref('success'); // success, error, info
 let toastTimeout = null;
 
+const logModalVisible = ref(false);
+const logModalTitle = ref('');
+const logContent = ref('');
+const loadingLogs = ref(false);
+
 function showToast(msg, type = 'success') {
   toastMessage.value = msg;
   toastType.value = type;
@@ -190,11 +195,32 @@ async function copyLink(name) {
   }
 }
 
+// 8. 查看出口容器日志
+async function viewLogs(name) {
+  logModalVisible.value = true;
+  logModalTitle.value = name;
+  logContent.value = '';
+  loadingLogs.value = true;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/egress/${name}/logs?tail=160`);
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || '读取日志失败');
+    logContent.value = result.logs || '暂无日志输出';
+  } catch (err) {
+    logContent.value = `读取日志失败: ${err.message}`;
+    showToast(err.message, 'error');
+  } finally {
+    loadingLogs.value = false;
+  }
+}
+
 // 辅助状态翻译与颜色
 function getStatusLabel(status) {
   switch (status) {
     case 'running': return '运行中';
     case 'starting': return '自愈/启动中';
+    case 'rebuilding': return '漂移重建中';
     case 'error': return '链路异常';
     case 'offline': return '已离线';
     default: return status || '未知';
@@ -244,6 +270,21 @@ const stats = computed(() => {
           <span v-else>ℹ</span>
         </span>
         {{ toastMessage }}
+      </div>
+    </Transition>
+
+    <Transition name="toast">
+      <div v-if="logModalVisible" class="log-modal-backdrop" @click.self="logModalVisible = false">
+        <div class="log-modal glass-panel">
+          <div class="log-modal-head">
+            <div>
+              <h3>{{ logModalTitle }} 容器日志</h3>
+              <p>最近 160 行 OpenVPN / Xray 启动输出</p>
+            </div>
+            <button class="btn btn-icon" @click="logModalVisible = false">✕</button>
+          </div>
+          <pre class="log-output">{{ loadingLogs ? '正在读取日志...' : logContent }}</pre>
+        </div>
       </div>
     </Transition>
 
@@ -411,6 +452,12 @@ const stats = computed(() => {
                   延迟 {{ egress.latency || 0 }}ms | 检测于 {{ new Date(egress.lastCheckTime).toLocaleTimeString() }}
                 </span>
               </div>
+              <div v-if="egress.error" class="info-row">
+                <span class="info-label">错误信息:</span>
+                <span class="info-value text-danger truncate" :title="egress.error">
+                  {{ egress.error }}
+                </span>
+              </div>
             </div>
 
             <!-- 卡片操作区 -->
@@ -429,6 +476,14 @@ const stats = computed(() => {
                 :disabled="egress.status === 'starting'"
               >
                 ⚡ 透明漂移
+              </button>
+
+              <button
+                @click="viewLogs(egress.name)"
+                class="btn btn-icon"
+                title="查看容器日志"
+              >
+                📜
               </button>
 
               <button 
@@ -537,6 +592,58 @@ const stats = computed(() => {
 .toast-enter-from, .toast-leave-to {
   opacity: 0;
   transform: translateY(-20px);
+}
+
+.log-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+}
+
+.log-modal {
+  width: min(900px, 100%);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.log-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.log-modal-head h3 {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.log-modal-head p {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.log-output {
+  min-height: 260px;
+  max-height: 58vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  color: #d7e2f0;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 /* 页眉 */
@@ -763,6 +870,7 @@ const stats = computed(() => {
 
 .status-border-running { border-left-color: var(--success-color); }
 .status-border-starting { border-left-color: var(--warning-color); }
+.status-border-rebuilding { border-left-color: var(--warning-color); }
 .status-border-error { border-left-color: var(--danger-color); }
 .status-border-offline { border-left-color: var(--text-secondary); }
 
@@ -856,6 +964,7 @@ const stats = computed(() => {
 .card-actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .flex-1 { flex: 1; }

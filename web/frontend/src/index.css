@@ -178,6 +178,12 @@ body {
   border: 1px solid rgba(255, 145, 0, 0.2);
 }
 
+.badge-rebuilding {
+  background: rgba(255, 145, 0, 0.1);
+  color: var(--warning-color);
+  border: 1px solid rgba(255, 145, 0, 0.2);
+}
+
 .badge-error {
   background: rgba(255, 23, 68, 0.1);
   color: #ff5252;

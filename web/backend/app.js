@@ -59,8 +59,8 @@ function startSelfHealingDaemon() {
     for (const egress of egresses) {
       const name = egress.name;
       
-      // 如果出口已被标记为暂停或删除中，则跳过
-      if (egress.status === 'starting') {
+      // 如果出口正在启动或人工漂移中，则跳过，避免重复重建
+      if (egress.status === 'starting' || egress.status === 'rebuilding') {
         continue;
       }
 
@@ -70,6 +70,12 @@ function startSelfHealingDaemon() {
         if (statusReport.status !== 'running' || statusReport.ip === 'error') {
           // 累加失败计数
           failureTracker[name] = (failureTracker[name] || 0) + 1;
+          db.updateEgress(name, {
+            failureCount: failureTracker[name],
+            error: statusReport.error || '连通性断开',
+            lastCheckTime: Date.now(),
+            updatedAt: Date.now()
+          });
           console.warn(`[!] 出口 ${name} 检测异常 (${failureTracker[name]}/${MAX_FAILURES})，错误原因: ${statusReport.error || '连通性断开'}`);
 
           // 当连续失败次数达到最大容忍限制，触发自动漂移
@@ -78,7 +84,7 @@ function startSelfHealingDaemon() {
             
             // 重置计数，避免重复触发
             failureTracker[name] = 0;
-            db.updateEgress(name, { status: 'starting' });
+            db.updateEgress(name, { status: 'rebuilding', failureCount: 0, error: '', updatedAt: Date.now() });
 
             // 开始漂移逻辑：拉取新节点 -> 更新 ovpn -> 重启容器
             try {
@@ -93,15 +99,17 @@ function startSelfHealingDaemon() {
               db.updateEgress(name, {
                 nodeIp: bestNode.ip,
                 nodeHostname: bestNode.hostname,
-                latency: bestNode.ping
+                latency: bestNode.ping,
+                updatedAt: Date.now()
               });
 
               // 启动新容器
-              await dockerService.startEgressContainer(egress);
-              db.updateEgress(name, { status: 'running' });
+              const updatedEgress = db.getEgress(name) || egress;
+              const containerId = await dockerService.startEgressContainer(updatedEgress);
+              db.updateEgress(name, { containerId, status: 'running', error: '', failureCount: 0, updatedAt: Date.now() });
               console.log(`[+] [自愈成功] 出口 ${name} 已成功漂移至新节点 IP: ${bestNode.ip}`);
             } catch (driftErr) {
-              db.updateEgress(name, { status: 'error', error: `自愈失败: ${driftErr.message}` });
+              db.updateEgress(name, { status: 'error', error: `自愈失败: ${driftErr.message}`, updatedAt: Date.now() });
               console.error(`[-] [自愈失败] 出口 ${name} 透明漂移出错:`, driftErr.message);
             }
           }
@@ -111,6 +119,7 @@ function startSelfHealingDaemon() {
             console.log(`[+] 出口 ${name} 网络已恢复，重置计数`);
           }
           failureTracker[name] = 0;
+          db.updateEgress(name, { failureCount: 0, error: '', lastCheckTime: Date.now(), updatedAt: Date.now() });
         }
       } catch (err) {
         console.error(`[-] 定时检测出口 ${name} 时发生系统错误:`, err.message);
