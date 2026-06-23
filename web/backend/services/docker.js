@@ -97,8 +97,9 @@ async function startEgressContainer(egress) {
         `${hostEgressDir}/client.ovpn:/etc/openvpn/client.ovpn:ro`,
         `${hostEgressDir}/config.json:/etc/xray/config.json:ro`
       ],
-      // 使用 on-failure 策略避免无限重启循环消耗系统资源
-      RestartPolicy: { Name: 'on-failure', MaximumRetryCount: 3 },
+      // 由 self-healing.js 统一决策是否漂移，容器只需保证始终可重启。
+      // 使用 unless-stopped 策略避免 on-failure 重试上限耗尽后容器永久停止。
+      RestartPolicy: { Name: 'unless-stopped' },
       // 将出口容器加入面板同一网络，便于后续内部通信扩展
       NetworkMode: 'vless-net'
     }

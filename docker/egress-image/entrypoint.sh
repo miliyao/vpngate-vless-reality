@@ -5,6 +5,22 @@
 
 set -e
 
+# ── 优雅退出处理 ──────────────────────────────────────────────────────────────
+# 捕获 SIGTERM / SIGINT，确保 docker stop 时能正确终止所有子进程，
+# 而不是让 Xray / OpenVPN 变成孤儿进程。
+cleanup() {
+  echo "[*] 接收到停止信号，正在优雅关闭所有子进程..."
+  if [ -n "${XRAY_PID:-}" ] && kill -0 "$XRAY_PID" 2>/dev/null; then
+    kill -TERM "$XRAY_PID"
+    wait "$XRAY_PID" 2>/dev/null || true
+    echo "[+] Xray 已停止"
+  fi
+  pkill -f openvpn 2>/dev/null || true
+  echo "[+] 容器已优雅退出"
+  exit 0
+}
+trap cleanup SIGTERM SIGINT
+
 echo "[*] 正在初始化网络策略路由..."
 
 # 1. 备份原默认路由和网卡，用于维持入站回程路由
@@ -112,6 +128,8 @@ while true; do
     else
         FAILED_COUNT=0
     fi
-    
-    sleep 20
+
+    # 使用 sleep + wait 而非直接 sleep，确保 trap 能及时响应信号
+    sleep 20 &
+    wait $!
 done

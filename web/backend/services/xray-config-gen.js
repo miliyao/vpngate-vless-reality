@@ -9,6 +9,18 @@ const TEMPLATE_PATH = fs.existsSync('/app/config/xray-config.template.json')
   ? '/app/config/xray-config.template.json'
   : path.join(__dirname, '..', '..', '..', 'config', 'xray-config.template.json');
 
+// 模块级缓存模板内容，进程生命周期内仅读取一次磁盘
+let cachedTemplate = null;
+
+function loadTemplate() {
+  if (cachedTemplate) return cachedTemplate;
+  if (!fs.existsSync(TEMPLATE_PATH)) {
+    throw new Error(`模板文件不存在: ${TEMPLATE_PATH}`);
+  }
+  cachedTemplate = fs.readFileSync(TEMPLATE_PATH, 'utf-8');
+  return cachedTemplate;
+}
+
 /**
  * 生成 Xray 配置文件并写入指定路径
  * @param {Object} params
@@ -21,11 +33,7 @@ const TEMPLATE_PATH = fs.existsSync('/app/config/xray-config.template.json')
  */
 function generateConfig({ uuid, privateKey, shortId, destDomain, serverName }, outputPath) {
   try {
-    if (!fs.existsSync(TEMPLATE_PATH)) {
-      throw new Error(`模板文件不存在: ${TEMPLATE_PATH}`);
-    }
-
-    let templateContent = fs.readFileSync(TEMPLATE_PATH, 'utf-8');
+    let templateContent = loadTemplate();
 
     // 替换模板中的占位符
     templateContent = templateContent

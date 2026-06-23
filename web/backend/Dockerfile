@@ -1,4 +1,4 @@
-FROM node:18-slim
+FROM node:18.20-slim
 
 # 安装 openssl，主要用于 Reality 密钥对生成或一些基础网络诊断
 RUN apt-get update && apt-get install -y --no-install-recommends \

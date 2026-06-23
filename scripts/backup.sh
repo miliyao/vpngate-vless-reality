@@ -24,3 +24,11 @@ tar -czf "${OUT_FILE}" "${INCLUDES[@]}"
 chmod 600 "${OUT_FILE}"
 
 echo "${OUT_FILE}"
+
+# 保留最近 N 份备份，自动清理旧文件（默认 7 份，可通过 BACKUP_KEEP 覆盖）
+BACKUP_KEEP="${BACKUP_KEEP:-7}"
+OLD_BACKUPS=$(ls -1t "${BACKUP_DIR}"/vless-reality-backup-*.tar.gz 2>/dev/null | tail -n +"$((BACKUP_KEEP + 1))")
+if [ -n "${OLD_BACKUPS}" ]; then
+  echo "${OLD_BACKUPS}" | xargs rm -f
+  echo "[*] 已清理超出保留策略的旧备份（保留最近 ${BACKUP_KEEP} 份）"
+fi

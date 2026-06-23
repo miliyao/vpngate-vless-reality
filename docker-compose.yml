@@ -52,6 +52,10 @@ services:
       - TZ=Asia/Shanghai
       - RE_DOMAINS=${RE_DOMAINS:-www.amd.com}
       - HOST_DATA_PATH=${HOST_DATA_PATH:-${PWD}/data}
+    # 确保面板（含数据库初始化）健康后再启动 worker，避免 SQLite 竞态
+    depends_on:
+      web-panel:
+        condition: service_healthy
     command: ["npm", "run", "start:worker"]
     healthcheck:
       test: ["CMD-SHELL", "tr '\\0' ' ' </proc/1/cmdline | grep -q 'start:worker' || exit 1"]

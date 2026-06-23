@@ -1,28 +1,42 @@
 // 抓取并解析 VPNGate 节点服务
+// 使用 Node 18+ 内置 fetch，移除 axios 外部依赖
 // 中文注释，保持代码的高鲁棒性和降级机制
 
-const axios = require('axios');
-
 const VPNGATE_API_URL = 'https://www.vpngate.net/api/iphone/';
-const TIMEOUT = 15000; // 15秒超时
+const TIMEOUT_MS = 15000; // 15 秒超时
+const CACHE_TTL_MS = 3600000; // 节点缓存有效期：1 小时
 
-// 内存中的最后一次节点缓存，用于拉取失败时的降级方案
+// 内存中的最后一次节点缓存及其时间戳，用于拉取失败时的降级和 TTL 控制
 let nodeCache = [];
+let nodeCacheTime = 0;
 
 /**
  * 从 VPNGate 获取所有活跃节点并解析为 JSON
+ * 若缓存未过期（TTL 1小时内）则直接返回缓存，避免频繁请求上游
  */
 async function fetchNodes() {
+  // 缓存命中检查：未过期直接返回
+  if (nodeCache.length > 0 && Date.now() - nodeCacheTime < CACHE_TTL_MS) {
+    console.log(`[*] VPNGate 节点缓存命中（剩余有效期 ${Math.round((CACHE_TTL_MS - (Date.now() - nodeCacheTime)) / 60000)} 分钟）`);
+    return nodeCache;
+  }
+
   try {
     console.log(`[*] 正在从 ${VPNGATE_API_URL} 获取 VPNGate 节点列表...`);
-    const response = await axios.get(VPNGATE_API_URL, {
-      timeout: TIMEOUT,
+
+    // 使用 Node 18+ 内置 fetch，通过 AbortSignal.timeout 实现超时控制
+    const response = await fetch(VPNGATE_API_URL, {
+      signal: AbortSignal.timeout(TIMEOUT_MS),
       headers: {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)'
       }
     });
 
-    const data = response.data;
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.text();
     if (!data || !data.includes('*vpn_servers')) {
       throw new Error('获取到的数据格式不正确');
     }
@@ -41,7 +55,7 @@ async function fetchNodes() {
         continue;
       }
 
-      // 如果数据段已经结束
+      // 数据段结束标记
       if (line.startsWith('*') && isDataSection) {
         break;
       }
@@ -81,12 +95,14 @@ async function fetchNodes() {
     }
 
     console.log(`[+] 成功拉取并解析了 ${nodes.length} 个 VPNGate 节点`);
-    nodeCache = nodes; // 更新缓存
+    // 更新缓存及时间戳
+    nodeCache = nodes;
+    nodeCacheTime = Date.now();
     return nodes;
   } catch (error) {
     console.error('[-] 拉取 VPNGate 接口失败:', error.message);
     if (nodeCache.length > 0) {
-      console.log('[*] 启用降级方案：使用本地内存中的缓存节点数据');
+      console.log('[*] 启用降级方案：使用本地内存中的缓存节点数据（已过期但可用）');
       return nodeCache;
     }
     throw error;
