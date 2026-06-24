@@ -245,6 +245,15 @@ module.exports = {
   updateJob(id, updates = {}) {
     const current = stmt.getJob.get(id);
     if (!current) return null;
+
+    // 简体中文注释：智能处理 JSON 序列化，防止对数据库内已有 TEXT 二次编码
+    let resultStr = current.result || '{}';
+    if (updates.result !== undefined) {
+      resultStr = typeof updates.result === 'string'
+        ? updates.result
+        : JSON.stringify(updates.result || {});
+    }
+
     const merged = {
       ...current,
       ...updates,
@@ -254,7 +263,7 @@ module.exports = {
     stmt.updateJob.run({
       id,
       status: merged.status,
-      result: JSON.stringify(merged.result || {}),
+      result: resultStr,
       error: merged.error || '',
       updatedAt: merged.updatedAt,
       startedAt: merged.startedAt || current.startedAt || null,

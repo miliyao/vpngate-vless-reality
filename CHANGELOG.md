@@ -3,9 +3,13 @@
 ## v1.2.0 - 2026-06-24
 
 ### 重构优化
+- **Worker 任务互斥并发调度**：在 `worker.js` 中引入基于 `limitConcurrency` 的并发任务执行限制（最大并发度为 2），并结合基于 `target` 的互斥锁逻辑，有效防止同出口的并发操作导致容器竞态，大幅提升后台队列消费效率。
+- **SQLite Job 序列化缺陷修复**：修复 `db.js` 中 `updateJob` 将已序列化的 JSON TEXT 二次 `JSON.stringify` 编码的缺陷，确保 `result`/`payload` 在持久化层中的 JSON 格式正确且解析无误。
 - **数据库增量安全更新**：重构 `db.js` 中的 `updateEgress`，根据字段动态编译并缓存 SQL，杜绝 Read-Modify-Write 并发竞态条件，清理冗余 SQL。
 - **智能自愈规避死节点**：重构 `vpngate-fetcher.js` 和 `egress-ops.js`，支持排除列表。自愈重建时自动隔离前一次连接失败的节点 IP 并更换新节点重试，彻底打破因死节点排名靠前而导致的无限重建死循环。
+- **自愈机制并发化与异步解耦**：重构 `self-healing.js`。自愈状态检测由串行升级为 `Promise.allSettled` 并发，并将耗时的容器重建操作提交至任务队列作为异步 Job 处理，消除了自愈进程卡死风险，并使自动漂移进度和日志可在前台 Task 队列中直观展现，极大提升系统可观测性。
 - **出口自愈探测去限流化**：在 `entrypoint.sh` 中使用各大科技公司无流量 Generate 204 HEAD 探测，替代容易引起 429 限流的 ipinfo.io 与 api.ipify.org 轮询检测，并优化获取 IP 的多源回退容错机制。
+- **VPNGate API 多源自动兜底**：重构 `vpngate-fetcher.js`，支持配置多个备用 API 镜像源 URL。拉取节点失败时自动顺次切换至备选镜像源重试，彻底消除上游单点网络故障隐患。
 - **批量操作受控并发化**：在 `egress-ops.js` 中引入轻量级 `limitConcurrency` 异步控制，将创建、重建和删除操作由串行升级为并发度为 3 的受控并发。
 - **严格的安全路径防穿越**：对出口相关目录强制使用 `path.resolve` 进行绝对路径计算，严格判定目录前缀以防止利用恶意穿越字符对系统敏感文件进行破坏。
 - **前端模块化组件拆分**：将 720 行单文件 `App.vue` 大幅拆分为 `SystemStatus.vue`、`CreateEgressForm.vue`、`EgressCard.vue` 和 `JobList.vue` 四个功能子组件，重构前后端组件通信，提高可维护性。

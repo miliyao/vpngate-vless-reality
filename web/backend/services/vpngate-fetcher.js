@@ -2,8 +2,12 @@
 // 使用 Node 18+ 内置 fetch，移除 axios 外部依赖
 // 中文注释，保持代码的高鲁棒性和降级机制
 
-const VPNGATE_API_URL = 'https://www.vpngate.net/api/iphone/';
-const TIMEOUT_MS = 15000; // 15 秒超时
+const VPNGATE_API_URLS = [
+  'https://www.vpngate.net/api/iphone/',
+  'http://www2.vpngate.net/api/iphone/',
+  'http://www.vpngate.net/api/iphone/'
+];
+const TIMEOUT_MS = 12000; // 单次抓取限制 12 秒超时，防止顺次尝试总耗时过长
 const CACHE_TTL_MS = 3600000; // 节点缓存有效期：1 小时
 
 // 内存中的最后一次节点缓存及其时间戳，用于拉取失败时的降级和 TTL 控制
@@ -21,26 +25,49 @@ async function fetchNodes() {
     return nodeCache;
   }
 
-  try {
-    console.log(`[*] 正在从 ${VPNGATE_API_URL} 获取 VPNGate 节点列表...`);
+  let lastError = null;
+  let data = null;
 
-    // 使用 Node 18+ 内置 fetch，通过 AbortSignal.timeout 实现超时控制
-    const response = await fetch(VPNGATE_API_URL, {
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)'
+  // 简体中文注释：顺次循环拉取配置的多源镜像源，直到成功或全部失败
+  for (let idx = 0; idx < VPNGATE_API_URLS.length; idx++) {
+    const url = VPNGATE_API_URLS[idx];
+    try {
+      console.log(`[*] 正在从 ${url} 获取 VPNGate 节点列表... (${idx + 1}/${VPNGATE_API_URLS.length})`);
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`);
       }
-    });
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      data = await response.text();
+      if (data && data.includes('*vpn_servers')) {
+        // 数据包完整，退出多源轮询
+        break;
+      } else {
+        throw new Error('获取到的数据格式不正确');
+      }
+    } catch (err) {
+      console.warn(`[!] 从源 ${url} 获取节点失败:`, err.message);
+      lastError = err;
     }
+  }
 
-    const data = await response.text();
-    if (!data || !data.includes('*vpn_servers')) {
-      throw new Error('获取到的数据格式不正确');
+  // 简体中文注释：若所有源抓取全部报错，则启用本地缓存降级或抛出异常
+  if (!data) {
+    console.error('[-] 所有配置的 VPNGate 镜像源均已尝试拉取失败');
+    if (nodeCache.length > 0) {
+      console.log('[*] 启用降级方案：使用本地内存中的缓存节点数据（已过期但可用）');
+      return nodeCache;
     }
+    throw new Error(`所有 VPNGate 镜像源拉取失败，最后一次错误: ${lastError ? lastError.message : '未知'}`);
+  }
 
+  try {
     const lines = data.split('\n');
     const nodes = [];
 
@@ -100,9 +127,9 @@ async function fetchNodes() {
     nodeCacheTime = Date.now();
     return nodes;
   } catch (error) {
-    console.error('[-] 拉取 VPNGate 接口失败:', error.message);
+    console.error('[-] 解析 VPNGate 缓存数据出错:', error.message);
     if (nodeCache.length > 0) {
-      console.log('[*] 启用降级方案：使用本地内存中的缓存节点数据（已过期但可用）');
+      console.log('[*] 启用降级方案：使用本地内存中的缓存数据兜底');
       return nodeCache;
     }
     throw error;
