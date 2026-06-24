@@ -2,4 +2,4 @@
 data
 docker/egress-image/xray
 **/node_modules
-**/dist
+web/frontend/dist
