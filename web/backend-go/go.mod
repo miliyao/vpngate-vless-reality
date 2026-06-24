@@ -1,6 +1,6 @@
 module vless-reality-panel
 
-go 1.25.0
+go 1.23.0
 
 replace (
 	github.com/docker/distribution => github.com/docker/distribution v2.8.2+incompatible
