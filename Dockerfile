@@ -41,7 +41,7 @@ WORKDIR /app
 COPY --from=backend-builder /app/backend-go/vless-panel ./vless-panel
 
 # 拷贝打包好的前端静态资源文件 dist，Go 主程序将自适应探测并托管该文件夹
-COPY --from=frontend-builder /app/backend/dist ./dist
+COPY --from=frontend-builder /app/backend-go/dist ./dist
 
 # 声明挂载卷
 VOLUME ["/app/data", "/app/config"]
