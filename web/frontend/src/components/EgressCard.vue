@@ -56,7 +56,7 @@ function timeAgo(ts) {
   <div :class="['eg-card', 'glass-panel', `glow-${getStatusClass(eg.status)}`]">
     <div class="eg-top">
       <div class="eg-identity">
-        <span class="eg-flag">{{ getFlagEmoji(eg.region) }}</span>
+        <img :src="'https://flagcdn.com/w40/' + eg.region.toLowerCase() + '.png'" :alt="eg.region" class="eg-flag-img" />
         <div>
           <div class="eg-name">{{ eg.name }}</div>
           <div class="text-secondary region-text">{{ regionName(eg.region) }} · {{ eg.region }}</div>
@@ -139,9 +139,14 @@ function timeAgo(ts) {
   align-items: center;
   gap: 12px;
 }
-.eg-flag {
-  font-size: 28px;
-  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.25));
+.eg-flag-img {
+  width: 34px;
+  height: 24px;
+  object-fit: cover;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  filter: brightness(0.95);
 }
 .eg-name {
   font-size: 16px;
