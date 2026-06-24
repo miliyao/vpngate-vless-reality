@@ -246,6 +246,29 @@ async function copyAllLinks() {
   await copyText(subModalLinks.value.join('\n'), '全部链接已复制');
 }
 
+// 简体中文注释：复制订阅 URL 地址
+async function copySubUrl() {
+  await copyText(subUrl.value, '订阅 URL 已复制');
+}
+
+// 简体中文注释：复制 Base64 编码的订阅内容，并提供 2 秒的状态高亮反馈
+async function copySubB64() {
+  const success = await copyText(subModalB64.value, '订阅 Base64 已复制');
+  if (success) {
+    subCopied.value = true;
+    setTimeout(() => { subCopied.value = false; }, 2000);
+  }
+}
+
+// 简体中文注释：从弹窗中复制单个出口连接，并提供 2 秒的状态高亮反馈
+async function copyLinkFromModal() {
+  const success = await copyText(linkModalLink.value, '链接已复制');
+  if (success) {
+    linkCopied.value = true;
+    setTimeout(() => { linkCopied.value = false; }, 2000);
+  }
+}
+
 const stats = computed(() => ({
   total: egressList.value.length,
   running: egressList.value.filter(e => e.status === 'running').length,

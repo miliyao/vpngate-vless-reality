@@ -103,13 +103,20 @@ async function rebuildEgress(name) {
   const excludeSet = new Set();
   if (lastFailedIp) excludeSet.add(lastFailedIp);
 
-  const node = await vpngateFetcher.getBestNode(egress.region, excludeSet);
-  const dir = ensureDir(name);
-  fs.writeFileSync(path.join(dir, 'client.ovpn'), node.ovpnConfig, 'utf-8');
-  db.updateEgress(name, { nodeIp: node.ip, nodeHostname: node.hostname, latency: node.ping, updatedAt: Date.now() });
-  const containerId = await dockerService.startEgressContainer(db.getEgress(name));
-  db.updateEgress(name, { containerId, status: 'running', error: '', failureCount: 0, updatedAt: Date.now() });
-  return { name, region: egress.region, port: egress.port };
+  try {
+    const node = await vpngateFetcher.getBestNode(egress.region, excludeSet);
+    const dir = ensureDir(name);
+    fs.writeFileSync(path.join(dir, 'client.ovpn'), node.ovpnConfig, 'utf-8');
+    db.updateEgress(name, { nodeIp: node.ip, nodeHostname: node.hostname, latency: node.ping, updatedAt: Date.now() });
+    const containerId = await dockerService.startEgressContainer(db.getEgress(name));
+    db.updateEgress(name, { containerId, status: 'running', error: '', failureCount: 0, updatedAt: Date.now() });
+    return { name, region: egress.region, port: egress.port };
+  } catch (err) {
+    // 简体中文注释：若重建流程在中途失败（如获取节点失败或 Docker 启动失败），必须把状态重置为 error，
+    // 并写入具体的错误信息，防止 egress 状态永久卡在 rebuilding 漂移中，同时也方便用户排查
+    db.updateEgress(name, { status: 'error', error: `重建失败: ${err.message}`, updatedAt: Date.now() });
+    throw err; // 继续向上抛出异常让 Job 标记为 failed
+  }
 }
 
 async function deleteEgress(name) {

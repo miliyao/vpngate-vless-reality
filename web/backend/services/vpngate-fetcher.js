@@ -145,10 +145,25 @@ async function getBestNode(region, excludeIps) {
   const nodes = await fetchNodes();
   
   // 筛选对应国家的节点，并自动排除不可用的失效 IP
-  const filtered = nodes.filter(
+  let filtered = nodes.filter(
     n => n.countryShort.toLowerCase() === region.toLowerCase() &&
          (!excludeIps || (excludeIps instanceof Set ? !excludeIps.has(n.ip) : !excludeIps.includes(n.ip)))
   );
+
+  // 简体中文注释：退化降级处理。如果排除失效节点后无匹配节点，但该地区实际上是有节点的，则清空排除条件重新筛选，
+  // 允许尝试之前连过的节点，防止仅有一两个节点或全部被排除导致自愈死锁、报错中断。
+  if (filtered.length === 0 && excludeIps) {
+    const hasExclude = excludeIps instanceof Set ? excludeIps.size > 0 : excludeIps.length > 0;
+    if (hasExclude) {
+      const fallbackNodes = nodes.filter(
+        n => n.countryShort.toLowerCase() === region.toLowerCase()
+      );
+      if (fallbackNodes.length > 0) {
+        console.warn(`[!] 地区 ${region} 过滤排除 IP 后无可用节点，降级为不进行 IP 排除过滤（可用节点数: ${fallbackNodes.length}）`);
+        filtered = fallbackNodes;
+      }
+    }
+  }
 
   if (filtered.length === 0) {
     throw new Error(`未在 VPNGate 中找到国家/地区为 ${region} 的可用节点`);
