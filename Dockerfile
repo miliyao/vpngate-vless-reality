@@ -12,7 +12,7 @@ COPY web/frontend/ ./
 RUN NODE_OPTIONS="--max-old-space-size=512" npm run build
 
 # ── 阶段 2：Go 后端编译构建 ──────────────────────────────────────────────────────
-FROM golang:1.23-alpine AS backend-builder
+FROM golang:alpine AS backend-builder
 
 WORKDIR /app/backend-go
 
