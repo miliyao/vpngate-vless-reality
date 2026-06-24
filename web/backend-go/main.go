@@ -40,8 +40,8 @@ func corsMiddleware(next http.Handler) http.Handler {
 // requirePanelAuth 时序安全的 Basic Auth 认证中间件
 func requirePanelAuth(next http.Handler, username, password string, authEnabled bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 1. 无需验证权限的公有健康检查端点
-		if r.URL.Path == "/healthz" {
+		// 1. 无需验证权限的公有健康检查及客户端订阅接口（因第三方客户端如 v2rayN 通常无法便利携带 Basic Auth 且避免明文泄露面板密码）
+		if r.URL.Path == "/healthz" || r.URL.Path == "/api/egress/subscription" || r.URL.Path == "/api/egress/subscription.txt" {
 			next.ServeHTTP(w, r)
 			return
 		}
