@@ -50,10 +50,8 @@ vpngate-vless-reality/
 │   │   ├── controllers/            # API 路由与控制器 (出口生命周期、VPNGate数据)
 │   │   ├── models/                 # 纯 Go 无 CGO 的 SQLite 持久化层
 │   │   ├── services/               # 核心业务服务 (Docker SDK、Reality密钥、Xray占位符)
-│   │   ├── dist/                   # 前端编译静态资源包
 │   │   ├── go.mod                  # Go 模块配置文件
-│   │   ├── main.go                 # 主服务入口 (时序安全 Basic Auth、静态分发)
-│   │   └── vless-panel             # 本地交叉编译的 Linux amd64 生产级免编译二进制
+│   │   └── main.go                 # 主服务入口 (时序安全 Basic Auth、静态分发)
 │   └── frontend/                   # Vue3 科技感暗黑前端界面
 │       ├── src/
 │       │   ├── components/         # 模块化前端子组件 (仪表盘状态、卡片、表单)
@@ -119,16 +117,15 @@ chmod +x deploy.sh
 * 前端依赖安装与打包（生成的前端静态文件将自动放置于后端 `web/backend-go/dist` 目录下）。
 * 交叉编译 Go 后端为适用于 Linux amd64 架构的免依赖二进制程序。
 
-#### 2. 推送至远程仓库 (或打包直传 VPS)
-将本地编译好的产物强制加入 Git 索引并推送（请确保网络连通）：
+#### 2. 将编译产物上传至 VPS
+`web/backend-go/vless-panel` 和 `web/backend-go/dist/` 属于本地构建产物，默认不会提交到 Git。可使用 `scp`、`rsync` 或压缩包方式传到 VPS 的项目目录：
 ```bash
-git add -f web/backend-go/vless-panel web/backend-go/dist
-git commit -m "build: 本地交叉编译产物"
-git push
+scp web/backend-go/vless-panel root@你的服务器IP:/root/vpngate-vless-reality/web/backend-go/
+scp -r web/backend-go/dist root@你的服务器IP:/root/vpngate-vless-reality/web/backend-go/
 ```
 
 #### 3. VPS 上秒级拉起运行
-在 VPS 上拉取代码，并配合 `Dockerfile.fast` 快速拉起，打包镜像仅需 1 秒：
+在 VPS 上拉取代码或确认项目目录已存在，并配合 `Dockerfile.fast` 快速拉起，打包镜像仅需 1 秒：
 ```bash
 # 构建出口容器的基础镜像（名称必须固定为 vpngate-egress:latest）
 docker build -t vpngate-egress:latest ./docker/egress-image/

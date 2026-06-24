@@ -37,8 +37,7 @@ echo [+] Binary: web/backend-go/vless-panel
 echo [+] Frontend static: web/backend-go/dist
 echo ===================================================
 echo Tips:
-echo 1. Run: git add -f web/backend-go/vless-panel web/backend-go/dist
-echo 2. Run: git commit -m "build: local compile assets"
-echo 3. Run: git push
-echo 4. On VPS, pull and run docker build using Dockerfile.fast or run directly.
+echo 1. These outputs are local build artifacts and are ignored by Git.
+echo 2. Upload/copy them to the VPS together with Dockerfile.fast when using fast packaging.
+echo 3. On VPS, run docker build -f Dockerfile.fast -t vless-reality-panel:latest .
 echo ===================================================

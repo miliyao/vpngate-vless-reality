@@ -24,6 +24,7 @@ backups/
 Thumbs.db
 
 # 前后端打包构建产物
+web/backend-go/dist/
 web/backend/dist/
 web/frontend/dist/
 dist/
