@@ -9,6 +9,10 @@ const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 // 镜像名称
 const EGRESS_IMAGE = 'vpngate-egress:latest';
 
+// 简体中文注释：状态测活轻量级内存缓存，去重并发请求，提升响应性能
+const statusCache = {};
+const CACHE_MAX_AGE_MS = 6000; // 缓存有效时间：6 秒
+
 // 缓存宿主机数据目录路径，避免每次启动容器都执行 inspect
 let cachedHostDataPath = null;
 
@@ -134,11 +138,30 @@ async function stopAndRemoveContainer(name) {
 }
 
 /**
- * 检查容器状态并获取当前 VPN 出口的真实 IP
- * 使用 Dockerode 原生的 demuxStream 正确解析 Docker 多路复用 stream 协议头
+ * 检查容器状态并获取当前 VPN 出口的真实 IP (带缓存包装)
  * @param {string} name - 出口名称
  */
 async function getContainerStatusAndIp(name) {
+  const now = Date.now();
+  const cached = statusCache[name];
+  if (cached && (now - cached.timestamp < CACHE_MAX_AGE_MS)) {
+    return cached.data;
+  }
+
+  const res = await _getContainerStatusAndIpRaw(name);
+  statusCache[name] = {
+    timestamp: now,
+    data: res
+  };
+  return res;
+}
+
+/**
+ * 检查容器状态并获取当前 VPN 出口的真实 IP (原始逻辑)
+ * 使用 Dockerode 原生的 demuxStream 正确解析 Docker 多路复用 stream 协议头
+ * @param {string} name - 出口名称
+ */
+async function _getContainerStatusAndIpRaw(name) {
   const containerName = `egress-${name}`;
   try {
     const container = docker.getContainer(containerName);

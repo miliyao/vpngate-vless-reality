@@ -85,7 +85,21 @@ router.get('/list', async (req, res) => {
       if (dockerStatus.ip && dockerStatus.ip !== 'offline' && dockerStatus.ip !== 'error') {
         updates.currentEgressIp = dockerStatus.ip;
       }
-      result.push(db.updateEgress(egress.name, updates) || egress);
+
+      // 简体中文注释：仅在状态、报错信息或外网出口 IP 发生实质改变时才写入 SQLite，免去常规高频磁盘更新落盘损耗
+      const isChanged = egress.status !== updates.status ||
+                        egress.error !== updates.error ||
+                        (updates.currentEgressIp && egress.currentEgressIp !== updates.currentEgressIp);
+
+      if (isChanged) {
+        result.push(db.updateEgress(egress.name, updates) || egress);
+      } else {
+        // 无变化则直接内存合并，省去磁盘 I/O 写入开销
+        result.push({
+          ...egress,
+          ...updates
+        });
+      }
     }
     res.json(result);
   } catch (error) {
