@@ -28,3 +28,7 @@ web/backend/dist/
 web/frontend/dist/
 dist/
 
+# 编译的 Go 二进制文件
+*.exe
+vless-panel
+

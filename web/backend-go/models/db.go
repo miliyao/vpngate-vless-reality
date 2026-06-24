@@ -224,3 +224,134 @@ func CountEgress() (int, error) {
 	err := DB.QueryRow("SELECT COUNT(1) FROM egresses").Scan(&count)
 	return count, err
 }
+
+// CreateJob 创建一个新的后台任务记录
+func CreateJob(jobType, target, payload string) (*Job, error) {
+	nowMs := time.Now().UnixNano() / 1e6
+	if payload == "" {
+		payload = "{}"
+	}
+	
+	res, err := DB.Exec(`INSERT INTO jobs (
+		type, target, payload, status, result, error, createdAt, updatedAt, startedAt, finishedAt
+	) VALUES (?, ?, ?, 'queued', '{}', '', ?, ?, NULL, NULL)`,
+		jobType, target, payload, nowMs, nowMs,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("创建 Job 失败: %v", err)
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("获取 Job Insert ID 失败: %v", err)
+	}
+
+	return GetJob(id)
+}
+
+// GetJob 根据 ID 获取单个 Job 记录
+func GetJob(id int64) (*Job, error) {
+	row := DB.QueryRow("SELECT id, type, target, payload, status, result, error, createdAt, updatedAt, startedAt, finishedAt FROM jobs WHERE id = ? LIMIT 1", id)
+	var j Job
+	err := row.Scan(
+		&j.Id, &j.Type, &j.Target, &j.Payload, &j.Status, &j.Result, &j.Error,
+		&j.CreatedAt, &j.UpdatedAt, &j.StartedAt, &j.FinishedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &j, nil
+}
+
+// UpdateJob 动态字段更新 Job
+func UpdateJob(id int64, updates map[string]interface{}) (*Job, error) {
+	if len(updates) == 0 {
+		return GetJob(id)
+	}
+
+	updates["updatedAt"] = time.Now().UnixNano() / 1e6
+
+	var clauses []string
+	var args []interface{}
+	for k, v := range updates {
+		if k == "id" {
+			continue
+		}
+		clauses = append(clauses, fmt.Sprintf("%s = ?", k))
+		args = append(args, v)
+	}
+
+	sqlStr := fmt.Sprintf("UPDATE jobs SET %s WHERE id = ?", strings.Join(clauses, ", "))
+	args = append(args, id)
+
+	_, err := DB.Exec(sqlStr, args...)
+	if err != nil {
+		return nil, fmt.Errorf("更新 Job %d 失败: %v", id, err)
+	}
+
+	return GetJob(id)
+}
+
+// ListJobs 获取最近的任务列表，支持限制条数
+func ListJobs(limit int) ([]Job, error) {
+	rows, err := DB.Query("SELECT id, type, target, payload, status, result, error, createdAt, updatedAt, startedAt, finishedAt FROM jobs ORDER BY id DESC LIMIT ?", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []Job
+	for rows.Next() {
+		var j Job
+		err := rows.Scan(
+			&j.Id, &j.Type, &j.Target, &j.Payload, &j.Status, &j.Result, &j.Error,
+			&j.CreatedAt, &j.UpdatedAt, &j.StartedAt, &j.FinishedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, j)
+	}
+	return list, nil
+}
+
+// JobStatusCounts 获取各状态任务的统计数量
+func JobStatusCounts() (map[string]int, error) {
+	rows, err := DB.Query("SELECT status, COUNT(1) AS count FROM jobs GROUP BY status")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, err
+		}
+		counts[status] = count
+	}
+	return counts, nil
+}
+
+// LatestJob 获取最新的一条任务
+func LatestJob() (*Job, error) {
+	row := DB.QueryRow("SELECT id, type, target, payload, status, result, error, createdAt, updatedAt, startedAt, finishedAt FROM jobs ORDER BY id DESC LIMIT 1")
+	var j Job
+	err := row.Scan(
+		&j.Id, &j.Type, &j.Target, &j.Payload, &j.Status, &j.Result, &j.Error,
+		&j.CreatedAt, &j.UpdatedAt, &j.StartedAt, &j.FinishedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &j, nil
+}
+

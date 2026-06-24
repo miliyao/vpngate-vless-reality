@@ -1,5 +1,24 @@
 # 更新日志
 
+## v1.3.3 - 2026-06-24
+
+### 新增
+- **开启 Go 语言后端重构第四阶段（HTTP 路由、Controllers、Basic Auth 与主服务整合）**：
+  - 新增控制器目录并在 [vpngate.go](file:///d:/Users/Aaron/Desktop/vless/web/backend-go/controllers/vpngate.go) 中实现高分节点预览与国家节点数统计 API，在 [egress.go](file:///d:/Users/Aaron/Desktop/vless/web/backend-go/controllers/egress.go) 中实现出口及订阅的增删改查全套 API。
+  - 针对任务列表，编写了兼容性强类型适配 `JobJSONResponse` 结构，自动解码 SQLite 内的 Payload 和 Result 字符串为标准 JSON，确保前端组件无感对接。
+  - 在 [main.go](file:///d:/Users/Aaron/Desktop/vless/web/backend-go/main.go) 中挂载了基于时序安全对比（`subtle.ConstantTimeCompare`）的 Basic Auth 认证，防范针对管理员账号密码判定时产生的计时侧信道攻击。
+  - 编写了单页面静态托管服务（SPA FileServer），支持对 Vite 构建成果的多候选路径自适应探测加载与 SPA 路由自动回退 index.html，并实现了一体化的 Go 进程一键运行。
+
+## v1.3.2 - 2026-06-24
+
+### 新增
+- **开启 Go 语言后端重构第三阶段（自愈守护、任务消费与出口业务）**：
+  - 补全了 SQLite 数据库 Job 数据表的 CRUD 接口（`CreateJob`、`GetJob`、`UpdateJob`、`ListJobs`、`JobStatusCounts` 和 `LatestJob`），对 `payload`/`result` 进行完美的 JSON 结构兼容对接。
+  - 重构了 [egress_ops.go](file:///d:/Users/Aaron/Desktop/vless/web/backend-go/services/egress_ops.go) 核心出口业务编排模块，实现了 `CreateEgress` 端口分配、`RebuildEgress` 故障 IP 排除型热重启，内嵌了连续 3 次失败自动熔断销毁逻辑。同时对批量操作实现了并发度为 3 的 Go 协程控制和绝对路径防越权。
+  - 重构了 [worker.go](file:///d:/Users/Aaron/Desktop/vless/web/backend-go/services/worker.go) 任务消费队列，使用缓冲通道与双并发 Worker 协程消费，结合基于 `sync.Map` 的 Target 互斥锁，彻底解耦并消除了对同一出口执行并发操作引发的 Docker 状态冲突。
+  - 重构了 [self_healing.go](file:///d:/Users/Aaron/Desktop/vless/web/backend-go/services/self-healing.go) 自愈测活定时服务，基于 `time.NewTicker` 定时拉起并发协程测活。对连通失效节点进行 `failureCount` 累加，达到上限（2次）自动投递 `rebuild` 任务进行故障漂移自愈。
+  - 更新了 [main.go](file:///d:/Users/Aaron/Desktop/vless/web/backend-go/main.go) 的集成验证逻辑，确保能够在本地开发及无 Docker 运行环境下，成功启动 Worker 线程池和自愈心跳，并在捕获测试异常后实现任务的闭环消费与状态追踪。
+
 ## v1.3.1 - 2026-06-24
 
 ### 新增
