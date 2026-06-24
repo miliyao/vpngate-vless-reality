@@ -26,8 +26,8 @@ COPY web/backend-go/ ./
 # 在容器内自动整理并对齐依赖，消除各平台环境配置差异
 RUN go mod tidy
 
-# 编译成无 CGO 依赖的静态二进制
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o vless-panel main.go
+# 编译成无 CGO 依赖的静态二进制，限制编译并发为 1 以节省内存，防止低配 VPS 卡死
+RUN CGO_ENABLED=0 GOOS=linux go build -p 1 -ldflags="-s -w" -o vless-panel main.go
 
 # ── 阶段 3：轻量级运行时镜像 ──────────────────────────────────────────────────────
 FROM alpine:latest AS runtime
