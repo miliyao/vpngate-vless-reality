@@ -1,5 +1,14 @@
 # 更新日志
 
+## v1.3.1 - 2026-06-24
+
+### 新增
+- **开启 Go 语言后端重构第二阶段（Docker SDK、VLESS 密钥与 Xray 配置）**：
+  - 集成官方 Docker Go SDK，重构了 [docker.go](file:///d:/Users/Aaron/Desktop/vless/web/backend-go/services/docker.go) 容器管理层，实现容器的快速重启复用及生命周期管理，并使用原生 `stdcopy.StdCopy` 对 Docker stream 进行安全拆流，从根本上消除了乱码，且增加了 6 秒测活短缓存。
+  - 编写了 [reality.go](file:///d:/Users/Aaron/Desktop/vless/web/backend-go/services/reality.go) 原生密钥生成器，使用 Go 标准库中的 `crypto/ecdh` 原生且极其安全地生成 X25519 密钥对和 8 字节 shortId，摆脱了对外部 xray 命令行的调用依赖。
+  - 编写了 [xray.go](file:///d:/Users/Aaron/Desktop/vless/web/backend-go/services/xray.go) 配置文件生成器，通过模块级缓存和多路径自适应遍历成功实现了对 Xray 配置模板的精准读取与占位符注入。
+  - 解决了 `moby` 高低版本分割引发的模块歧义冲突，并在 `go.mod` 中利用 `replace` 将依赖版本锁定至最稳定的兼容版本，通过了在 Windows 和 Linux 网络环境下的编译运行。
+
 ## v1.3.0 - 2026-06-24
 
 ### 新增
