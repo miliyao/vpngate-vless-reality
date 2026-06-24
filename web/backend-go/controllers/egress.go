@@ -49,10 +49,11 @@ func getVpsHost(r *http.Request) string {
 	if addr := os.Getenv("VPS_ADDRESS"); addr != "" {
 		return addr
 	}
-	if host := r.Header.Get("Host"); host != "" {
-		hostOnly, _, err := net.SplitHostPort(host)
+	// 在 Go http 服务端中，Host 报头在解析后会被从 Header 字典移出，并直接填充在 r.Host 字段中
+	if r.Host != "" {
+		hostOnly, _, err := net.SplitHostPort(r.Host)
 		if err != nil {
-			return host // 如果没有端口直接返回
+			return r.Host // 如果没有端口则直接返回
 		}
 		return hostOnly
 	}
