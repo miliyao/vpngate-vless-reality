@@ -5,8 +5,8 @@ import path from 'path';
 export default defineConfig({
   plugins: [vue()],
   build: {
-    // 将编译生成的文件直接输出到后端服务的静态文件夹中，简化部署步骤
-    outDir: path.resolve(__dirname, '../backend/dist'),
+    // 将编译生成的文件直接输出到 Go 后端服务的静态文件夹中，简化部署步骤
+    outDir: path.resolve(__dirname, '../backend-go/dist'),
     emptyOutDir: true,
   },
   server: {

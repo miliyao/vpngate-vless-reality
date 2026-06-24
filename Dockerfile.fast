@@ -1,0 +1,27 @@
+# ── 极速部署运行时镜像 ────────────────────────────────────────────────────────
+# 本镜像不包含任何前端和 Go 编译阶段，仅包含最终运行环境。
+# 适用于本地使用 build.bat 编译后，VPS 秒级打包直接启动的场景，解决 VPS 性能不足的痛点。
+
+FROM alpine:latest
+
+# 安装基础依赖包 (curl) 用于容器健康度检查，配置本地时区
+RUN apk add --no-cache curl tzdata
+
+WORKDIR /app
+
+# 拷贝本地已交叉编译好的 Linux 无依赖二进制程序
+COPY web/backend-go/vless-panel ./vless-panel
+
+# 拷贝本地构建完成的前端静态资源文件 dist
+COPY web/backend-go/dist ./dist
+
+# 声明挂载卷
+VOLUME ["/app/data", "/app/config"]
+
+EXPOSE 3000
+
+# 赋予可执行权限
+RUN chmod +x ./vless-panel
+
+# 运行 Go 高性能一体化服务端
+CMD ["./vless-panel"]
