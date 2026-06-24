@@ -3,6 +3,7 @@
 ## v1.2.0 - 2026-06-24
 
 ### 重构优化
+- **修复测活多源管道异常回退失效**：在 `docker.js` 与 `entrypoint.sh` 的所有获取 IP `curl` 指令中强制引入 `-f` 参数。当服务器因代理风险返回 4xx/5xx HTTP 错误码时强制使 `curl` 返回非零状态，从而能正确激活 shell 的 `||` 管道并顺次请求后续备份 API。
 - **高可用测活 IP 多源随机打散**：重构 `docker.js` 中的 `getContainerStatusAndIp` 容器测活功能，弃用对单个 `ipinfo.io` 测活接口的依赖，改为在 Node 端实现主流 IP API 的随机打散，并通过 `sh -c` 执行多源回退获取。此举极大分摊了高频探测对单点接口产生的请求负荷，消除了 429 速率限制引发的误判自愈。
 - **Worker 任务互斥并发调度**：在 `worker.js` 中引入基于 `limitConcurrency` 的并发任务执行限制（最大并发度为 2），并结合基于 `target` 的互斥锁逻辑，有效防止同出口的并发操作导致容器竞态，大幅提升后台队列消费效率。
 - **SQLite Job 序列化缺陷修复**：修复 `db.js` 中 `updateJob` 将已序列化的 JSON TEXT 二次 `JSON.stringify` 编码的缺陷，确保 `result`/`payload` 在持久化层中的 JSON 格式正确且解析无误。

@@ -74,9 +74,9 @@ echo "[*] 测试出口网络连通性并获取外网 IP..."
 VPN_IP=""
 for i in {1..3}; do
     # 通过 tun0 强制路由获取当前外网 IP，采用多源备份以防止接口限流或故障
-    VPN_IP=$(curl -s --interface tun0 --max-time 6 https://api.ipify.org || \
-             curl -s --interface tun0 --max-time 6 https://ipinfo.io/ip || \
-             curl -s --interface tun0 --max-time 6 https://ifconfig.me/ip || true)
+    VPN_IP=$(curl -fs --interface tun0 --max-time 6 https://api.ipify.org || \
+             curl -fs --interface tun0 --max-time 6 https://ipinfo.io/ip || \
+             curl -fs --interface tun0 --max-time 6 https://ifconfig.me/ip || true)
     if [ -n "$VPN_IP" ]; then
         echo "[+] VPN 出口建立成功！当前代理出口 IP 为: $VPN_IP"
         break

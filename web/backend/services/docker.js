@@ -157,7 +157,7 @@ async function getContainerStatusAndIp(name) {
       'https://ipinfo.io/ip'
     ];
     const shuffledApis = [...ipApis].sort(() => Math.random() - 0.5);
-    const cmdString = shuffledApis.map(api => `curl -s --interface tun0 --max-time 4 ${api}`).join(' || ');
+    const cmdString = shuffledApis.map(api => `curl -fs --interface tun0 --max-time 4 ${api}`).join(' || ');
 
     // 在容器内部执行 curl 获取 VPN 出口真实 IP，支持多源回退与防限流
     try {
