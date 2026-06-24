@@ -20,8 +20,13 @@ WORKDIR /app/backend-go
 COPY web/backend-go/go.mod web/backend-go/go.sum ./
 RUN go mod download
 
-# 拷贝后端 Go 核心源码并编译成无 CGO 依赖的静态二进制
+# 拷贝后端 Go 核心源码
 COPY web/backend-go/ ./
+
+# 在容器内自动整理并对齐依赖，消除各平台环境配置差异
+RUN go mod tidy
+
+# 编译成无 CGO 依赖的静态二进制
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o vless-panel main.go
 
 # ── 阶段 3：轻量级运行时镜像 ──────────────────────────────────────────────────────
