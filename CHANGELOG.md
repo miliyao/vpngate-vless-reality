@@ -17,6 +17,7 @@
 - **前端 API 请求统一封装**：提取 `apiFetch` 拦截包装，统一规范 JSON Header 并全局捕获处理 API 内部抛出的 error。
 
 ### 部署集成
+- **避免多服务重复编译与堆内存限制**：重构 `docker-compose.yml`，使 `self-healing-worker` 镜像直接继承复用 `web-panel` 编译后的镜像，消除低配 VPS 双重前端打包造成的 CPU 与内存开销。同时，在 `Dockerfile` 前端编译命令中加入限制堆内存参数 (`--max-old-space-size=512`)，彻底解决低配服务器部署时卡死的问题。
 - **Docker 多阶段构建与 dist 移出 Git**：不再在 Git 中提交编译后的 `dist/` 静态产物，在 `docker-compose.yml` 中调整构建上下文到根目录，并在 `Dockerfile` 引入 Multi-stage Build 容器内自动编译，实现极致一键部署。
 - **过滤规则优化**：项目根目录新增 `.dockerignore`，并在 `.gitignore` 补充编译排除，规避无关的 node_modules 和 data 传入镜像。
 

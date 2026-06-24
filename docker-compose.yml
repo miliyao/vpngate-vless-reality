@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: web/backend/Dockerfile
+    image: vless-reality-panel:latest
     container_name: vless-web-panel
     restart: always
     environment:
@@ -42,9 +43,7 @@ services:
       - vless-net
 
   self-healing-worker:
-    build:
-      context: .
-      dockerfile: web/backend/Dockerfile
+    image: vless-reality-panel:latest
     container_name: vless-self-healing-worker
     restart: always
     environment:

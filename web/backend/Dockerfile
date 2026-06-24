@@ -9,7 +9,7 @@ RUN npm install
 
 # 拷贝前端源码并进行静态包构建
 COPY web/frontend/ ./
-RUN npm run build
+RUN NODE_OPTIONS="--max-old-space-size=512" npm run build
 
 # ── 阶段 2：后端与服务运行 ────────────────────────────────────────────────────────
 FROM node:18.20-slim AS runtime
