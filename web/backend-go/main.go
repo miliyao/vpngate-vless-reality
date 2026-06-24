@@ -20,7 +20,7 @@ import (
 
 var (
 	startTime   = time.Now()
-	versionName = "1.3.2" // 与 CHANGELOG 同步
+	versionName = "1.3.4" // 与 CHANGELOG 同步
 )
 
 // 极简 CORS 跨域辅助中间件，方便本地前端开发联调

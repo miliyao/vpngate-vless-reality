@@ -1,5 +1,19 @@
 # 更新日志
 
+## v1.3.4 - 2026-06-24
+
+### 优化与热修复
+- **彻底清理与架构大瘦身**：
+  - 物理清理删除了所有旧版的 Node.js 后端代码，实现了服务在 Go 架构下的极净化收尾。
+- **高并发 SQLite 写入锁死修复**：
+  - 在数据库加载中配置了 `SetMaxOpenConns(1)` 限制，依靠 Go 的 Channel/Connection 队列锁代替复杂的磁盘锁排队，彻底根治多协程批量创建或测活增量同步时频繁抛出的 `database is locked (5) (SQLITE_BUSY)` 错误。
+- **客户端免 Auth 订阅与 IP 动态生成修复**：
+  - 将订阅相关的 HTTP 端点加入鉴权白名单免校验，避免了第三方客户端同步订阅节点时遭遇 `401 Unauthorized`。
+  - 将 Host 主机头提取逻辑修正为 Go 规范的 `r.Host` 字段，彻底修复了客户端更新节点时由于默认值降级导致节点“地址”列输出为占位字符 `your_vps_ip` 的问题。
+- **引入本地一键构建与极速运行时部署**：
+  - 增加了本地 Windows 一键编译批处理脚本 [build.bat](file:///d:/Users/Aaron/Desktop/vless/build.bat)，在本地开发机执行前端 Vite 编译和 Go 的 Linux (amd64) 交叉编译。
+  - 调整了前端编译 `outDir` 定向至 Go 静态目录下，并增加了精炼 of [Dockerfile.fast](file:///d:/Users/Aaron/Desktop/vless/Dockerfile.fast)。在优化 [.dockerignore](file:///d:/Users/Aaron/Desktop/vless/.dockerignore) 后，使 VPS 上可以在 1 秒内以零硬件开销极速重构拉起。
+
 ## v1.3.3 - 2026-06-24
 
 ### 新增
