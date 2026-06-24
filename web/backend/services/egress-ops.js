@@ -84,7 +84,8 @@ async function createEgress({ name, region, uuid }) {
     updatedAt: Date.now(),
     lastCheckTime: Date.now(),
     latency: node.ping,
-    failureCount: 0
+    failureCount: 0,
+    rebuildFailureCount: 0
   };
 
   db.addEgress(egress);
@@ -109,13 +110,28 @@ async function rebuildEgress(name) {
     fs.writeFileSync(path.join(dir, 'client.ovpn'), node.ovpnConfig, 'utf-8');
     db.updateEgress(name, { nodeIp: node.ip, nodeHostname: node.hostname, latency: node.ping, updatedAt: Date.now() });
     const containerId = await dockerService.startEgressContainer(db.getEgress(name));
-    db.updateEgress(name, { containerId, status: 'running', error: '', failureCount: 0, updatedAt: Date.now() });
+    db.updateEgress(name, { containerId, status: 'running', error: '', failureCount: 0, rebuildFailureCount: 0, updatedAt: Date.now() });
     return { name, region: egress.region, port: egress.port };
   } catch (err) {
-    // 简体中文注释：若重建流程在中途失败（如获取节点失败或 Docker 启动失败），必须把状态重置为 error，
-    // 并写入具体的错误信息，防止 egress 状态永久卡在 rebuilding 漂移中，同时也方便用户排查
-    db.updateEgress(name, { status: 'error', error: `重建失败: ${err.message}`, updatedAt: Date.now() });
-    throw err; // 继续向上抛出异常让 Job 标记为 failed
+    const newRebuildFailureCount = (egress.rebuildFailureCount || 0) + 1;
+    if (newRebuildFailureCount >= 3) {
+      console.error(`[-] 出口 ${name} 重建连续失败达到上限 (${newRebuildFailureCount}/3)，直接删除该出口以释放资源`);
+      try {
+        await deleteEgress(name);
+      } catch (delErr) {
+        console.error(`[-] 自动删除失效出口 ${name} 时出错:`, delErr.message);
+      }
+      throw new Error(`重建连续失败达上限，已自动删除该地区出口。原报错: ${err.message}`);
+    } else {
+      // 简体中文注释：若重建流程在中途失败，必须把状态重置为 error，并写入具体的错误信息与累加失败计数
+      db.updateEgress(name, { 
+        status: 'error', 
+        error: `重建失败: ${err.message}`, 
+        rebuildFailureCount: newRebuildFailureCount,
+        updatedAt: Date.now() 
+      });
+      throw err;
+    }
   }
 }
 

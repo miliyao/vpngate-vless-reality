@@ -56,6 +56,13 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 `);
 
+// 简体中文注释：动态更新表结构，安全添加重建失败计数器
+try {
+  db.exec(`ALTER TABLE egresses ADD COLUMN rebuildFailureCount INTEGER NOT NULL DEFAULT 0`);
+} catch (e) {
+  // 忽略字段已存在的报错
+}
+
 const legacyJsonFile = path.join(DATA_DIR, 'db.json');
 if (stmtCountEgresses() === 0 && fs.existsSync(legacyJsonFile)) {
   try {
@@ -127,11 +134,11 @@ const stmt = {
   insertEgress: db.prepare(`INSERT INTO egresses (
     name, region, port, uuid, privateKey, publicKey, shortId,
     nodeIp, nodeHostname, status, error, currentEgressIp, containerId,
-    createdAt, updatedAt, lastCheckTime, latency, failureCount
+    createdAt, updatedAt, lastCheckTime, latency, failureCount, rebuildFailureCount
   ) VALUES (
     @name, @region, @port, @uuid, @privateKey, @publicKey, @shortId,
     @nodeIp, @nodeHostname, @status, @error, @currentEgressIp, @containerId,
-    @createdAt, @updatedAt, @lastCheckTime, @latency, @failureCount
+    @createdAt, @updatedAt, @lastCheckTime, @latency, @failureCount, @rebuildFailureCount
   )`),
   deleteEgress: db.prepare('DELETE FROM egresses WHERE name = ?'),
   countEgress: db.prepare('SELECT COUNT(1) AS c FROM egresses'),
@@ -153,7 +160,8 @@ function normalizeEgress(egress) {
     updatedAt: Number(egress.updatedAt),
     lastCheckTime: Number(egress.lastCheckTime),
     latency: Number(egress.latency || 0),
-    failureCount: Number(egress.failureCount || 0)
+    failureCount: Number(egress.failureCount || 0),
+    rebuildFailureCount: Number(egress.rebuildFailureCount || 0)
   };
 }
 

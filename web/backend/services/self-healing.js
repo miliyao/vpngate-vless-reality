@@ -2,7 +2,7 @@ const db = require('../models/db');
 const dockerService = require('./docker');
 const egressOps = require('./egress-ops');
 
-const HEALTH_CHECK_INTERVAL = Number(process.env.HEALTH_CHECK_INTERVAL || 60000);
+const HEALTH_CHECK_INTERVAL = Number(process.env.HEALTH_CHECK_INTERVAL || 86400000);
 const MAX_FAILURES = Number(process.env.MAX_FAILURES || 2);
 // 注：不再使用进程内 failureTracker，改为直接读写 DB 的 failureCount 字段，
 // 确保 worker 重启后失败计数仍能持续累积，不会被意外清零。
