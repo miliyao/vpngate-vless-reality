@@ -69,37 +69,130 @@ function handleDeleteAll() {
 
 <template>
   <div>
-    <h2>创建出口</h2>
-    <p class="text-secondary mb-16">自动获取 VPNGate 最优节点</p>
+    <h2>部署出口</h2>
+    <p class="text-secondary mb-16">动态连通最优 VPNGate 实效节点</p>
     <form @submit.prevent="submitSingle" class="form">
-      <label class="label">名称</label>
-      <input v-model="formName" type="text" class="input" placeholder="如 jp-01" required :disabled="creatingEgress" />
-      <label class="label">地区</label>
-      <select v-model="formRegion" class="input" :disabled="creatingEgress || loadingRegions">
-        <option v-if="loadingRegions" value="">加载中...</option>
-        <option v-for="r in vpnRegions" :key="r.code" :value="r.code">
-          {{ getFlagEmoji(r.code) }} {{ regionName(r.code, r.name) }} ({{ r.count }})
-        </option>
-      </select>
-      <label class="label">UUID <span class="text-secondary">(可选，留空自动生成)</span></label>
-      <input v-model="formUuid" type="text" class="input" placeholder="留空则自动生成" :disabled="creatingEgress" />
-      <button type="submit" class="btn btn-primary w-full" :disabled="creatingEgress">
+      <div class="input-group">
+        <label class="label">出口代号</label>
+        <input v-model="formName" type="text" class="input" placeholder="例如：jp-01" required :disabled="creatingEgress" />
+      </div>
+      
+      <div class="input-group">
+        <label class="label">目标区域</label>
+        <div class="select-wrapper">
+          <select v-model="formRegion" class="input select-input" :disabled="creatingEgress || loadingRegions">
+            <option v-if="loadingRegions" value="">正在检索可用节点...</option>
+            <option v-for="r in vpnRegions" :key="r.code" :value="r.code">
+              {{ getFlagEmoji(r.code) }} {{ regionName(r.code, r.name) }} ({{ r.count }} 节点)
+            </option>
+          </select>
+        </div>
+      </div>
+
+      <div class="input-group">
+        <label class="label">UUID 密钥 <span class="label-hint">(可选，留空将自动生成)</span></label>
+        <input v-model="formUuid" type="text" class="input" placeholder="保持默认自动随机生成" :disabled="creatingEgress" />
+      </div>
+
+      <button type="submit" class="btn btn-primary w-full submit-btn" :disabled="creatingEgress">
         <span v-if="creatingEgress" class="spinner"></span>
-        {{ creatingEgress ? '部署中...' : '构建单个出口' }}
+        <span v-else>💡 快速构建单个出口</span>
       </button>
     </form>
 
     <div class="divider"></div>
-    <h2>批量操作</h2>
-    <p class="text-secondary mb-16">一键管理全部地区出口</p>
+    <h2>批量运维</h2>
+    <p class="text-secondary mb-16">全局管理当前网络出口集群</p>
     <div class="batch-btns">
-      <button class="btn btn-primary w-full" @click="submitCreateAll" :disabled="creatingAll">
+      <button class="btn btn-primary w-full pulse-button" @click="submitCreateAll" :disabled="creatingAll">
         <span v-if="creatingAll" class="spinner"></span>
-        {{ creatingAll ? '正在创建...' : '一键创建全部地区' }}
+        <span v-else>⚡ 一键部署全可用地区</span>
       </button>
-      <button class="btn w-full" @click="emit('open-sub')">查看/复制订阅</button>
-      <button class="btn w-full" @click="handleRebuildAll" :disabled="egressCount === 0">全部漂移</button>
-      <button class="btn btn-danger w-full" @click="handleDeleteAll" :disabled="egressCount === 0">删除全部</button>
+      <button class="btn btn-secondary w-full" @click="emit('open-sub')">📂 导出节点订阅配置</button>
+      <button class="btn btn-rebuild w-full" @click="handleRebuildAll" :disabled="egressCount === 0">🔄 全网出口透明漂移</button>
+      <button class="btn btn-danger w-full" @click="handleDeleteAll" :disabled="egressCount === 0">🚨 彻底清空出口节点</button>
     </div>
   </div>
 </template>
+
+<style scoped>
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.label-hint {
+  font-weight: normal;
+  text-transform: none;
+  color: var(--text-muted);
+}
+.select-wrapper {
+  position: relative;
+  width: 100%;
+}
+.select-input {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  padding-right: 36px !important;
+}
+.select-wrapper::after {
+  content: '▼';
+  font-size: 8px;
+  color: var(--text-secondary);
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.submit-btn {
+  font-size: 14px;
+  padding: 12px;
+  margin-top: 4px;
+}
+.pulse-button {
+  background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+  box-shadow: 0 4px 14px 0 rgba(168, 85, 247, 0.4);
+}
+.pulse-button:hover {
+  background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+  box-shadow: 0 6px 20px 0 rgba(236, 72, 153, 0.6);
+}
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(99, 102, 241, 0.3);
+}
+.btn-rebuild {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+.btn-rebuild:hover {
+  background: var(--warning-gradient);
+  border-color: transparent;
+  color: white;
+  box-shadow: 0 4px 14px 0 rgba(245, 158, 11, 0.35);
+}
+.batch-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+</style>
