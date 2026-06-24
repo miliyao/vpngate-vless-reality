@@ -12,17 +12,24 @@
 
 ### 2. 透明漂移自愈 (Transparent Drifting)
 VPNGate 的公共节点具有不确定性，经常会失效。本系统后台运行着一个健康监视器：
-* 后台 Worker 每 60 秒对所有容器进行连通性（延迟与外网 IP）探测。
+* 后台 Worker 按 `HEALTH_CHECK_INTERVAL` 配置对所有容器进行连通性（延迟与外网 IP）探测，默认 24 小时一次。
 * 如果判定某个出口连续 2 次失效，Worker 将自动联网抓取该地区最新的可用节点，覆写配置文件并重启对应的出口容器。
 * 由于 **Xray 的宿主机端口、UUID 客户端密钥、Reality 证书等完全保持不变**，客户端在节点漂移时无须做任何配置修改，即可在 5-15 秒内自动连通新 IP。
 
-### 3. 管理任务队列
+### 3. VPNGate 候选池与节点历史
+VPNGate 返回的是公开 OpenVPN 节点原始 CSV 数据，节点可用性波动较大。本系统会将原始节点转化为候选池，并按 `Score`、`Speed`、`Uptime`、`Ping`、会话数和本机历史成功率进行综合评分。
+* 创建或漂移出口时，系统会按候选评分顺序逐个尝试，不再只取单个最高分节点。
+* 失败节点会写入 SQLite 历史，并在 `VPNGATE_FAILURE_COOLDOWN_MS` 窗口期内自动排除。
+* 如果冷门地区排除后无节点，系统会自动降级允许冷却节点参与，避免地区被锁死。
+* 登录后可通过 `/api/vpngate/candidates?region=JP` 查看当前候选评分，通过 `/api/vpngate/history?region=JP` 查看节点成功/失败历史。
+
+### 4. 管理任务队列
 面板上的创建、删除、漂移和批量操作会先写入 SQLite 任务队列，再由独立 Worker 执行。这样 Web API 不会因为长任务阻塞，刷新页面后也能查看最近任务状态与错误详情。
 
-### 4. 健康检查与状态接口
+### 5. 健康检查与状态接口
 Web 面板提供公开的 `/healthz` 存活检查，Docker Compose 会自动用它判断面板健康状态。登录后可访问 `/api/system/status` 查看版本、出口数量、任务状态统计和最近任务。
 
-### 5. 纯 Go 强悍性能与单连接队列锁
+### 6. 纯 Go 强悍性能与单连接队列锁
 系统后端已由 Node.js 彻底重构为纯 Go 语言版，不仅移除了 CGO 编译依赖支持全平台交叉编译，更大幅压缩了软硬件资源占用：
 * **内存骤降 90%**：控制面板服务常态运行内存由 100MB 骤降至 **10MB 左右**。
 * **极速响应**：Web API 并发响应时长进入微秒/毫秒级（**<1ms 响应**）。
@@ -157,6 +164,18 @@ nano .env
 PANEL_PASSWORD=你的强密码
 HOST_DATA_PATH=/当前项目绝对路径/data
 ```
+常用可调参数：
+```bash
+# 自愈健康检测间隔，单位毫秒；默认 86400000，即 24 小时
+HEALTH_CHECK_INTERVAL=86400000
+
+# VPNGate 失败节点冷却窗口，单位毫秒；默认 1800000，即 30 分钟
+VPNGATE_FAILURE_COOLDOWN_MS=1800000
+
+# 创建/漂移时最多尝试的候选节点数量
+VPNGATE_CREATE_CANDIDATE_LIMIT=8
+VPNGATE_REBUILD_CANDIDATE_LIMIT=8
+```
 
 #### 3. 编译并拉起控制面板 (容器内全自动构建)
 在项目根目录下执行 `--build` 选项，Docker 将自动在容器内构建前端 Vue 静态产物并编译 Go 模块：
@@ -190,6 +209,12 @@ curl http://127.0.0.1:3000/healthz
 
 # 登录后查看详细状态 (Basic Auth 认证)
 curl -u admin:你的密码 http://127.0.0.1:3000/api/system/status
+
+# 查看某地区 VPNGate 候选节点评分
+curl -u admin:你的密码 "http://127.0.0.1:3000/api/vpngate/candidates?region=JP"
+
+# 查看某地区 VPNGate 节点成功/失败历史
+curl -u admin:你的密码 "http://127.0.0.1:3000/api/vpngate/history?region=JP"
 
 # 查看一体化面板日志
 docker logs -f vless-web-panel

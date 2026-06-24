@@ -121,6 +121,10 @@ ensure_env_value "PANEL_PASSWORD" "$(generate_password)"
 ensure_env_value "VPS_ADDRESS" ""
 ensure_env_value "RE_DOMAINS" "www.amd.com"
 ensure_env_value "HOST_DATA_PATH" "$(pwd)/data"
+ensure_env_value "HEALTH_CHECK_INTERVAL" "86400000"
+ensure_env_value "VPNGATE_FAILURE_COOLDOWN_MS" "1800000"
+ensure_env_value "VPNGATE_CREATE_CANDIDATE_LIMIT" "8"
+ensure_env_value "VPNGATE_REBUILD_CANDIDATE_LIMIT" "8"
 
 set -a
 . ./.env
@@ -150,5 +154,6 @@ echo -e "  1. 浏览器打开上面的面板地址。"
 echo -e "  2. 输入出口名称 (例如 jp-01)，选择目标国家/地区，点击一键构建。"
 echo -e "  3. 当出口卡片状态变为 ${GREEN}运行中${PLAIN} 且获取到动态出口 IP 后，即可复制 VLESS 订阅链接连接使用。"
 echo -e "  4. 若需修改账号、密码、混淆域名或端口，可编辑根目录下的 ${YELLOW}.env${PLAIN} 并重启面板。"
-echo -e "  5. 容器后台 Worker 每 60 秒会自动对出口连通性进行自愈检测，失效节点将自动“透明漂移”无需人工维护。"
+echo -e "  5. 容器后台 Worker 会按 HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-86400000}ms 对出口连通性进行自愈检测，失效节点将自动“透明漂移”无需人工维护。"
+echo -e "  6. 可通过 /api/vpngate/candidates?region=JP 查看候选评分，通过 /api/vpngate/history?region=JP 查看节点历史。"
 echo -e "${BLUE}====================================================${PLAIN}"

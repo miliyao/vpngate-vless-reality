@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
+	"vless-reality-panel/models"
 	"vless-reality-panel/services"
 )
 
@@ -31,6 +33,22 @@ type RegionCount struct {
 	Count int    `json:"count"`
 }
 
+// CandidatePreview 展示 VPNGate 候选节点评分，不暴露完整 OpenVPN 配置
+type CandidatePreview struct {
+	Hostname       string  `json:"hostname"`
+	IP             string  `json:"ip"`
+	Region         string  `json:"region"`
+	Ping           int     `json:"ping"`
+	Speed          int64   `json:"speed"`
+	Score          int64   `json:"score"`
+	Sessions       int     `json:"sessions"`
+	Uptime         int64   `json:"uptime"`
+	Proto          string  `json:"proto"`
+	RemoteHost     string  `json:"remoteHost"`
+	RemotePort     string  `json:"remotePort"`
+	SelectionScore float64 `json:"selectionScore"`
+}
+
 // WriteJSON 辅助函数：输出 JSON 响应数据
 func WriteJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -41,6 +59,30 @@ func WriteJSON(w http.ResponseWriter, status int, data interface{}) {
 // WriteError 辅助函数：输出规范化的 JSON 错误信息
 func WriteError(w http.ResponseWriter, status int, message string) {
 	WriteJSON(w, status, map[string]string{"error": message})
+}
+
+func queryLimit(r *http.Request, defaultLimit, maxLimit int) int {
+	limit := defaultLimit
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if val, err := strconv.Atoi(raw); err == nil {
+			limit = val
+		}
+	}
+	if limit < 1 {
+		return 1
+	}
+	if limit > maxLimit {
+		return maxLimit
+	}
+	return limit
+}
+
+func queryRegion(r *http.Request) (string, bool) {
+	region := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("region")))
+	if len(region) != 2 {
+		return "", false
+	}
+	return region, true
 }
 
 // GetNodes 处理 GET /api/vpngate/nodes 请求，返回前 30 个高分活跃节点
@@ -112,4 +154,66 @@ func GetRegions(w http.ResponseWriter, r *http.Request) {
 	})
 
 	WriteJSON(w, http.StatusOK, list)
+}
+
+// GetCandidates 处理 GET /api/vpngate/candidates?region=JP，返回当前选点候选评分
+func GetCandidates(w http.ResponseWriter, r *http.Request) {
+	region, ok := queryRegion(r)
+	if !ok {
+		WriteError(w, http.StatusBadRequest, "region 参数必须是两位国家/地区代码，例如 JP")
+		return
+	}
+
+	limit := queryLimit(r, 8, 50)
+	candidates, err := services.GetCandidateNodes(region, nil, limit)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "获取 VPNGate 候选节点失败: "+err.Error())
+		return
+	}
+
+	result := make([]CandidatePreview, 0, len(candidates))
+	for _, n := range candidates {
+		result = append(result, CandidatePreview{
+			Hostname:       n.Hostname,
+			IP:             n.IP,
+			Region:         n.Country,
+			Ping:           n.Ping,
+			Speed:          n.Speed,
+			Score:          n.Score,
+			Sessions:       n.Sessions,
+			Uptime:         n.Uptime,
+			Proto:          n.Proto,
+			RemoteHost:     n.RemoteHost,
+			RemotePort:     n.RemotePort,
+			SelectionScore: n.SelectionScore,
+		})
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"region":     region,
+		"limit":      limit,
+		"candidates": result,
+	})
+}
+
+// GetHistory 处理 GET /api/vpngate/history?region=JP，返回本系统记录的节点成功/失败历史
+func GetHistory(w http.ResponseWriter, r *http.Request) {
+	region, ok := queryRegion(r)
+	if !ok {
+		WriteError(w, http.StatusBadRequest, "region 参数必须是两位国家/地区代码，例如 JP")
+		return
+	}
+
+	limit := queryLimit(r, 50, 200)
+	history, err := models.ListVPNGateHistory(region, limit)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "获取 VPNGate 节点历史失败: "+err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"region":  region,
+		"limit":   limit,
+		"history": history,
+	})
 }

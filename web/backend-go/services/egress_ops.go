@@ -18,6 +18,8 @@ import (
 
 var ServerName = getEnv("RE_DOMAINS", "www.amd.com")
 
+var createEgressLock sync.Mutex
+
 const (
 	StartPort = 44301
 	EndPort   = 44400
@@ -91,11 +93,42 @@ func CreateEgress(name, region, clientUuid string) (*models.Egress, error) {
 	name = strings.ToLower(name)
 	region = strings.ToUpper(region)
 
-	// 1. 从 VPNGate 获取最优节点
-	node, err := GetBestNode(region, nil)
+	existing, err := models.GetEgress(name)
 	if err != nil {
-		return nil, fmt.Errorf("获取最优节点失败: %v", err)
+		return nil, err
 	}
+	if existing != nil {
+		return nil, fmt.Errorf("出口 %s 已存在", name)
+	}
+
+	candidateLimit := getEnvInt("VPNGATE_CREATE_CANDIDATE_LIMIT", defaultCandidateLimit)
+	candidates, err := GetCandidateNodes(region, nil, candidateLimit)
+	if err != nil {
+		return nil, fmt.Errorf("获取 VPNGate 候选节点失败: %v", err)
+	}
+
+	var lastErr error
+	for _, node := range candidates {
+		egress, err := createEgressWithNode(name, region, clientUuid, &node)
+		if err == nil {
+			_ = models.RecordVPNGateNodeSuccess(node.IP, region, node.Hostname)
+			return egress, nil
+		}
+		lastErr = err
+		_ = models.RecordVPNGateNodeFailure(node.IP, region, node.Hostname, err.Error())
+		fmt.Printf("[!] 出口 %s 使用 VPNGate 节点 %s 创建失败，尝试下一个候选: %v\n", name, node.IP, err)
+		_ = StopAndRemoveContainer(name)
+	}
+
+	if lastErr != nil {
+		return nil, fmt.Errorf("所有 VPNGate 候选节点均创建失败，最后错误: %v", lastErr)
+	}
+	return nil, fmt.Errorf("没有可用于地区 %s 的 VPNGate 候选节点", region)
+}
+
+func createEgressWithNode(name, region, clientUuid string, node *OptimizedNode) (*models.Egress, error) {
+	createEgressLock.Lock()
+	defer createEgressLock.Unlock()
 
 	// 2. 生成 X25519 Reality 密钥对
 	keys, err := GenerateRealityKeys()
@@ -156,33 +189,23 @@ func CreateEgress(name, region, clientUuid string) (*models.Egress, error) {
 		RebuildFailureCount: 0,
 	}
 
-	err = models.AddEgress(egress)
-	if err != nil {
-		return nil, fmt.Errorf("数据入库失败: %v", err)
-	}
-
-	// 9. 调用 Docker 服务拉起出口容器
+	// 9. 调用 Docker 服务拉起出口容器。容器启动成功后再入库，避免失败候选占用同名记录。
 	containerId, err := StartEgressContainer(egress)
 	if err != nil {
-		// 启动失败，更新状态为 error 并抛出异常
-		_, _ = models.UpdateEgress(name, map[string]interface{}{
-			"status": "error",
-			"error":  fmt.Sprintf("启动 Docker 容器失败: %v", err),
-		})
 		return nil, fmt.Errorf("启动 Docker 容器失败: %v", err)
 	}
 
-	// 10. 更新容器 ID 且置为运行中
-	updated, err := models.UpdateEgress(name, map[string]interface{}{
-		"containerId": containerId,
-		"status":      "running",
-		"error":       "",
-	})
+	egress.ContainerId = containerId
+	egress.Status = "running"
+	egress.Error = ""
+
+	err = models.AddEgress(egress)
 	if err != nil {
-		return nil, fmt.Errorf("更新容器运行时状态失败: %v", err)
+		_ = StopAndRemoveContainer(name)
+		return nil, fmt.Errorf("数据入库失败: %v", err)
 	}
 
-	return updated, nil
+	return models.GetEgress(name)
 }
 
 // RebuildEgress 重建出口（自愈的核心执行流程，若重建连续失败 3 次将自动销毁出口）
@@ -211,8 +234,9 @@ func RebuildEgress(name string) (*models.Egress, error) {
 		excludeIps = append(excludeIps, egress.NodeIp)
 	}
 
-	// 1. 从 VPNGate 获取除失效 IP 之外的最佳新节点
-	node, err := GetBestNode(egress.Region, excludeIps)
+	// 1. 从 VPNGate 获取除失效 IP 之外的候选节点，并按综合质量顺序逐个尝试
+	candidateLimit := getEnvInt("VPNGATE_REBUILD_CANDIDATE_LIMIT", defaultCandidateLimit)
+	candidates, err := GetCandidateNodes(egress.Region, excludeIps, candidateLimit)
 	if err != nil {
 		// 重建抓取节点失败，处理重建失败累加及自动熔断删除
 		newRebuildFailureCount := egress.RebuildFailureCount + 1
@@ -230,50 +254,64 @@ func RebuildEgress(name string) (*models.Egress, error) {
 		}
 	}
 
+	var lastErr error
+	for _, node := range candidates {
+		updated, err := rebuildEgressWithNode(name, egress, &node)
+		if err == nil {
+			_ = models.RecordVPNGateNodeSuccess(node.IP, egress.Region, node.Hostname)
+			return updated, nil
+		}
+		lastErr = err
+		_ = models.RecordVPNGateNodeFailure(node.IP, egress.Region, node.Hostname, err.Error())
+		fmt.Printf("[!] 出口 %s 使用 VPNGate 节点 %s 重建失败，尝试下一个候选: %v\n", name, node.IP, err)
+	}
+
+	if lastErr == nil {
+		lastErr = fmt.Errorf("没有可用候选节点")
+	}
+
+	newRebuildFailureCount := egress.RebuildFailureCount + 1
+	if newRebuildFailureCount >= 3 {
+		fmt.Printf("[-] 出口 %s 重建连续失败达上限 (%d/3)，触发自动销毁\n", name, newRebuildFailureCount)
+		_ = DeleteEgress(name)
+		return nil, fmt.Errorf("重建连续失败达上限，已自动删除该地区出口。原报错: %v", lastErr)
+	}
+
+	_, _ = models.UpdateEgress(name, map[string]interface{}{
+		"status":              "error",
+		"error":               fmt.Sprintf("重建全部候选节点失败: %v", lastErr),
+		"rebuildFailureCount": newRebuildFailureCount,
+	})
+	return nil, lastErr
+}
+
+func rebuildEgressWithNode(name string, egress *models.Egress, node *OptimizedNode) (*models.Egress, error) {
 	// 2. 写入最新的 client.ovpn 文件到本地
 	dir := ensureDir(name)
 	ovpnPath := filepath.Join(dir, "client.ovpn")
-	err = os.WriteFile(ovpnPath, []byte(node.OvpnConfig), 0644)
+	err := os.WriteFile(ovpnPath, []byte(node.OvpnConfig), 0644)
 	if err != nil {
 		return nil, fmt.Errorf("重建写入 client.ovpn 失败: %v", err)
 	}
 
-	// 3. 先更新节点信息，再通过 StartEgressContainer 进行 Docker 重启/新建
-	_, err = models.UpdateEgress(name, map[string]interface{}{
-		"nodeIp":       node.IP,
-		"nodeHostname": node.Hostname,
-		"latency":      node.Ping,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	latestEgress, err := models.GetEgress(name)
-	if err != nil {
-		return nil, err
-	}
+	// 3. 先用内存中的新节点配置重启容器，成功后再提交数据库状态。
+	runtimeEgress := *egress
+	runtimeEgress.NodeIp = node.IP
+	runtimeEgress.NodeHostname = node.Hostname
+	runtimeEgress.Latency = node.Ping
 
 	// 4. 重启 Docker 出口容器
-	containerId, err := StartEgressContainer(latestEgress)
+	containerId, err := StartEgressContainer(&runtimeEgress)
 	if err != nil {
-		newRebuildFailureCount := egress.RebuildFailureCount + 1
-		if newRebuildFailureCount >= 3 {
-			fmt.Printf("[-] 出口 %s 容器启动连续失败达上限 (%d/3)，触发自动销毁\n", name, newRebuildFailureCount)
-			_ = DeleteEgress(name)
-			return nil, fmt.Errorf("重建连续失败达上限，已自动删除该地区出口。原报错: %v", err)
-		} else {
-			_, _ = models.UpdateEgress(name, map[string]interface{}{
-				"status":              "error",
-				"error":               fmt.Sprintf("重启出口容器失败: %v", err),
-				"rebuildFailureCount": newRebuildFailureCount,
-			})
-			return nil, err
-		}
+		return nil, fmt.Errorf("重启出口容器失败: %v", err)
 	}
 
 	// 5. 成功完成重建，重置故障计数器
 	updated, err := models.UpdateEgress(name, map[string]interface{}{
 		"containerId":         containerId,
+		"nodeIp":              node.IP,
+		"nodeHostname":        node.Hostname,
+		"latency":             node.Ping,
 		"status":              "running",
 		"error":               "",
 		"failureCount":        0,

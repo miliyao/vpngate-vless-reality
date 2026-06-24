@@ -54,6 +54,19 @@ type Job struct {
 	FinishedAt *int64 `json:"finishedAt"`
 }
 
+// VPNGateNodeHistory 记录 VPNGate 节点在本系统中的历史可用性
+type VPNGateNodeHistory struct {
+	IP            string `json:"ip"`
+	Region        string `json:"region"`
+	Hostname      string `json:"hostname"`
+	SuccessCount  int    `json:"successCount"`
+	FailureCount  int    `json:"failureCount"`
+	LastSuccessAt *int64 `json:"lastSuccessAt"`
+	LastFailureAt *int64 `json:"lastFailureAt"`
+	LastError     string `json:"lastError"`
+	UpdatedAt     int64  `json:"updatedAt"`
+}
+
 // InitDB 初始化 SQLite 数据库，创建数据表，升级数据库字段
 func InitDB(dbPath string) error {
 	dir := filepath.Dir(dbPath)
@@ -114,6 +127,21 @@ func InitDB(dbPath string) error {
 		startedAt INTEGER,
 		finishedAt INTEGER
 	);
+
+	CREATE TABLE IF NOT EXISTS vpngate_node_history (
+		ip TEXT PRIMARY KEY,
+		region TEXT NOT NULL,
+		hostname TEXT NOT NULL DEFAULT '',
+		successCount INTEGER NOT NULL DEFAULT 0,
+		failureCount INTEGER NOT NULL DEFAULT 0,
+		lastSuccessAt INTEGER,
+		lastFailureAt INTEGER,
+		lastError TEXT NOT NULL DEFAULT '',
+		updatedAt INTEGER NOT NULL
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_vpngate_node_history_region_failure
+	ON vpngate_node_history(region, lastFailureAt);
 	`
 	if _, err := DB.Exec(query); err != nil {
 		return fmt.Errorf("创建数据表失败: %v", err)
@@ -123,6 +151,124 @@ func InitDB(dbPath string) error {
 	_, _ = DB.Exec("ALTER TABLE egresses ADD COLUMN rebuildFailureCount INTEGER NOT NULL DEFAULT 0")
 
 	return nil
+}
+
+// RecordVPNGateNodeSuccess 记录 VPNGate 节点成功作为出口运行
+func RecordVPNGateNodeSuccess(ip, region, hostname string) error {
+	nowMs := time.Now().UnixNano() / 1e6
+	_, err := DB.Exec(`
+		INSERT INTO vpngate_node_history (
+			ip, region, hostname, successCount, failureCount, lastSuccessAt, lastFailureAt, lastError, updatedAt
+		) VALUES (?, ?, ?, 1, 0, ?, NULL, '', ?)
+		ON CONFLICT(ip) DO UPDATE SET
+			region = excluded.region,
+			hostname = excluded.hostname,
+			successCount = successCount + 1,
+			lastSuccessAt = excluded.lastSuccessAt,
+			lastError = '',
+			updatedAt = excluded.updatedAt
+	`, ip, strings.ToUpper(region), hostname, nowMs, nowMs)
+	return err
+}
+
+// RecordVPNGateNodeFailure 记录 VPNGate 节点拨号或验证失败
+func RecordVPNGateNodeFailure(ip, region, hostname, failure string) error {
+	nowMs := time.Now().UnixNano() / 1e6
+	_, err := DB.Exec(`
+		INSERT INTO vpngate_node_history (
+			ip, region, hostname, successCount, failureCount, lastSuccessAt, lastFailureAt, lastError, updatedAt
+		) VALUES (?, ?, ?, 0, 1, NULL, ?, ?, ?)
+		ON CONFLICT(ip) DO UPDATE SET
+			region = excluded.region,
+			hostname = excluded.hostname,
+			failureCount = failureCount + 1,
+			lastFailureAt = excluded.lastFailureAt,
+			lastError = excluded.lastError,
+			updatedAt = excluded.updatedAt
+	`, ip, strings.ToUpper(region), hostname, nowMs, failure, nowMs)
+	return err
+}
+
+// GetRecentFailedVPNGateIPs 获取指定地区在窗口期内失败过的 IP
+func GetRecentFailedVPNGateIPs(region string, sinceMs int64) ([]string, error) {
+	rows, err := DB.Query(
+		"SELECT ip FROM vpngate_node_history WHERE region = ? AND lastFailureAt IS NOT NULL AND lastFailureAt >= ?",
+		strings.ToUpper(region), sinceMs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ips []string
+	for rows.Next() {
+		var ip string
+		if err := rows.Scan(&ip); err != nil {
+			return nil, err
+		}
+		ips = append(ips, ip)
+	}
+	return ips, nil
+}
+
+// GetVPNGateHistoryMap 获取指定地区节点历史，用于选点综合评分
+func GetVPNGateHistoryMap(region string) (map[string]VPNGateNodeHistory, error) {
+	rows, err := DB.Query(`
+		SELECT ip, region, hostname, successCount, failureCount, lastSuccessAt, lastFailureAt, lastError, updatedAt
+		FROM vpngate_node_history WHERE region = ?
+	`, strings.ToUpper(region))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]VPNGateNodeHistory)
+	for rows.Next() {
+		var h VPNGateNodeHistory
+		if err := rows.Scan(
+			&h.IP, &h.Region, &h.Hostname, &h.SuccessCount, &h.FailureCount,
+			&h.LastSuccessAt, &h.LastFailureAt, &h.LastError, &h.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		result[h.IP] = h
+	}
+	return result, nil
+}
+
+// ListVPNGateHistory 获取指定地区最近更新的 VPNGate 节点历史记录
+func ListVPNGateHistory(region string, limit int) ([]VPNGateNodeHistory, error) {
+	if limit < 1 {
+		limit = 20
+	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	rows, err := DB.Query(`
+		SELECT ip, region, hostname, successCount, failureCount, lastSuccessAt, lastFailureAt, lastError, updatedAt
+		FROM vpngate_node_history
+		WHERE region = ?
+		ORDER BY updatedAt DESC
+		LIMIT ?
+	`, strings.ToUpper(region), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []VPNGateNodeHistory
+	for rows.Next() {
+		var h VPNGateNodeHistory
+		if err := rows.Scan(
+			&h.IP, &h.Region, &h.Hostname, &h.SuccessCount, &h.FailureCount,
+			&h.LastSuccessAt, &h.LastFailureAt, &h.LastError, &h.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		list = append(list, h)
+	}
+	return list, nil
 }
 
 // GetEgresses 获取所有出口信息
@@ -236,7 +382,7 @@ func CreateJob(jobType, target, payload string) (*Job, error) {
 	if payload == "" {
 		payload = "{}"
 	}
-	
+
 	res, err := DB.Exec(`INSERT INTO jobs (
 		type, target, payload, status, result, error, createdAt, updatedAt, startedAt, finishedAt
 	) VALUES (?, ?, ?, 'queued', '{}', '', ?, ?, NULL, NULL)`,
@@ -359,4 +505,3 @@ func LatestJob() (*Job, error) {
 	}
 	return &j, nil
 }
-

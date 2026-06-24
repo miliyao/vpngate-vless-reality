@@ -111,7 +111,7 @@ func handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 		var res interface{}
 		_ = json.Unmarshal([]byte(latestJob.Payload), &p)
 		_ = json.Unmarshal([]byte(latestJob.Result), &res)
-		
+
 		compatibleJob = map[string]interface{}{
 			"id":         latestJob.Id,
 			"type":       latestJob.Type,
@@ -158,7 +158,7 @@ func spaFileServer(distDir string) http.Handler {
 		filePath := filepath.Join(distDir, cleanPath)
 
 		fi, err := os.Stat(filePath)
-		
+
 		// 如果物理文件不存在，或者是目录（且目录下没有 index.html），则回退分发 index.html 供单页面路由解析
 		if os.IsNotExist(err) || (fi != nil && fi.IsDir() && !fileExists(filepath.Join(filePath, "index.html"))) {
 			http.ServeFile(w, r, filepath.Join(distDir, "index.html"))
@@ -199,7 +199,7 @@ func main() {
 	if _, err := os.Stat("/app/data"); err == nil {
 		dbPath = "/app/data/app.sqlite3"
 	}
-	
+
 	absDbPath, _ := filepath.Abs(dbPath)
 	fmt.Printf("[*] 正在载入 SQLite 数据库: %s\n", absDbPath)
 
@@ -240,6 +240,8 @@ func main() {
 	// VPNGate 镜像资源数据查询接口
 	mux.HandleFunc("GET /api/vpngate/nodes", controllers.GetNodes)
 	mux.HandleFunc("GET /api/vpngate/regions", controllers.GetRegions)
+	mux.HandleFunc("GET /api/vpngate/candidates", controllers.GetCandidates)
+	mux.HandleFunc("GET /api/vpngate/history", controllers.GetHistory)
 
 	// 4. 前端静态包服务挂载与 SPA 自愈回退
 	distDir := locateFrontendDist()
