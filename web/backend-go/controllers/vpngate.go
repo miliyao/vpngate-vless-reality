@@ -51,7 +51,7 @@ func GetNodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var previewNodes []NodePreview
+	previewNodes := make([]NodePreview, 0)
 	for _, n := range nodes {
 		if n.IP == "" || n.CountryShort == "" {
 			continue
@@ -101,7 +101,7 @@ func GetRegions(w http.ResponseWriter, r *http.Request) {
 		regionMap[code].Count++
 	}
 
-	var list []RegionCount
+	list := make([]RegionCount, 0)
 	for _, v := range regionMap {
 		list = append(list, *v)
 	}

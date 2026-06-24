@@ -67,7 +67,7 @@ func buildSubscriptionPayload(r *http.Request) (string, []string, int, error) {
 	}
 
 	vpsHost := getVpsHost(r)
-	var links []string
+	links := make([]string, 0)
 	for _, e := range list {
 		links = append(links, services.BuildLink(&e, vpsHost))
 	}
@@ -226,7 +226,7 @@ func ListEgressHandler(w http.ResponseWriter, r *http.Request) {
 	wg.Wait()
 
 	nowMs := time.Now().UnixNano() / 1e6
-	var results []models.Egress
+	results := make([]models.Egress, 0)
 
 	for i, egress := range list {
 		res := settled[i]
@@ -447,7 +447,7 @@ func ListJobsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 将字符串 payload/result 解构为原始 JSON 结构再进行输出，兼容前端
-	var results []JobJSONResponse
+	results := make([]JobJSONResponse, 0)
 	for _, j := range rawJobs {
 		results = append(results, toJobJSONResponse(&j))
 	}
