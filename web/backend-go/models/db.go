@@ -67,6 +67,11 @@ func InitDB(dbPath string) error {
 		return fmt.Errorf("打开数据库失败: %v", err)
 	}
 
+	// 限制最大打开连接数为 1，强制所有操作在同一个连接内串行排队，彻底避免多连接并发写入导致的 SQLITE_BUSY 锁死
+	DB.SetMaxOpenConns(1)
+	DB.SetMaxIdleConns(1)
+	DB.SetConnMaxLifetime(0)
+
 	// 启用 WAL 模式提高并发写入性能
 	if _, err := DB.Exec("PRAGMA journal_mode = WAL;"); err != nil {
 		return fmt.Errorf("启用 WAL 模式失败: %v", err)
