@@ -62,7 +62,7 @@ func InitDB(dbPath string) error {
 	}
 
 	var err error
-	DB, err = sql.Open("sqlite", dbPath)
+	DB, err = sql.Open("sqlite", dbPath+"?_busy_timeout=5000")
 	if err != nil {
 		return fmt.Errorf("打开数据库失败: %v", err)
 	}
