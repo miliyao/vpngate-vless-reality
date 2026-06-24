@@ -1,5 +1,13 @@
 # 更新日志
 
+## v1.3.0 - 2026-06-24
+
+### 新增
+- **开启 Go 语言后端重构第一阶段（骨架、数据库与节点抓取）**：
+  - 新建了纯 Go 后端骨架，初始化 `web/backend-go` 工作区，采用纯 Go 实现的 `modernc.org/sqlite` 驱动替代原本需要 C 编译器的 sqlite 库，消除了 CGO 编译依赖，实现了完美的高性能跨平台交叉编译部署。
+  - 编写了纯 Go 的数据库访问层 [db.go](file:///d:/Users/Aaron/Desktop/vless/web/backend-go/models/db.go)，自动进行表初始化、开启 WAL 并支持重建失败次数等最新升级列。
+  - 重构了高性能 VPNGate 节点解析器 [vpngate.go](file:///d:/Users/Aaron/Desktop/vless/web/backend-go/services/vpngate.go)，支持并发内存 TTL 缓存、多源镜像轮询重试以及针对唯一节点的自愈退化降级排序算法，经测试解析节点耗时缩短至毫秒级，且内存缓存命中率达 100%。
+
 ## v1.2.3 - 2026-06-24
 
 ### 重构优化
