@@ -63,18 +63,19 @@ async function startEgressContainer(egress) {
   const hostDataPath = await resolveHostDataPath();
   const hostEgressDir = `${hostDataPath}/egress/${egress.name}`;
 
-  // 1. 检查同名容器是否已存在，如果存在则先停止并删除
+  // 1. 检查同名容器是否已存在，如果存在则快速重启复用
   try {
     const existingContainer = docker.getContainer(containerName);
     const info = await existingContainer.inspect();
-    console.log(`[*] 检测到重名容器 ${containerName} (状态: ${info.State.Status})，正在进行清理...`);
-    if (info.State.Running) {
-      await existingContainer.stop({ t: 5 });
-    }
-    await existingContainer.remove();
-    console.log(`[+] 旧容器 ${containerName} 清理完毕`);
+    
+    // 简体中文注释：如果同名容器已存在，则通过挂载卷加载新配置，快速重启容器进程以使代理生效，
+    // 从而省去 stop、remove 再 create 容器的高昂系统冷启动耗时
+    console.log(`[*] 检测到重名容器 ${containerName} (状态: ${info.State.Status})，执行快速重启复用...`);
+    await existingContainer.restart({ t: 5 });
+    console.log(`[+] 出口容器 ${containerName} 重启成功`);
+    return info.Id;
   } catch (error) {
-    // 容器不存在，忽略
+    // 容器不存在，忽略并继续往下执行创建新容器流程
   }
 
   // 2. 创建并启动新容器

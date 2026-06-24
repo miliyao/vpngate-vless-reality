@@ -101,7 +101,14 @@ if (fs.existsSync(FRONTEND_DIST)) {
   });
 }
 
-// 4. 启动服务
+// 4. 启动服务并合并加载 Worker 队列消费与自愈
 app.listen(PORT, () => {
   console.log(`[+] 控制面板后端服务已在端口 ${PORT} 启动！`);
+  // 简体中文注释：引入 worker.js 合并进程运行，免去额外启动子进程的虚拟机内存与同步开销
+  try {
+    require('./worker.js');
+    console.log('[+] 后台自愈心跳与任务消费队列已成功并入主进程运行');
+  } catch (err) {
+    console.error('[-] 并入后台任务队列失败:', err.message);
+  }
 });
